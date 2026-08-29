@@ -1,0 +1,38 @@
+name: extended-test-campaigns
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 2 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    env:
+      NXGO_FUZZTIME: 2m
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - name: Bounded fuzz campaign
+        run: go run ./cmd/nxctl test fuzz
+
+  simulated-reliability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - name: Fake-Agent chaos
+        run: go run ./cmd/nxctl test chaos
+      - name: Fake-Agent soak
+        run: go run ./cmd/nxctl test soak
+      - name: Fake-Agent microbenchmark
+        run: go run ./cmd/nxctl test perf
