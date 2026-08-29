@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "id": "NXGO-INV-OBJ-002",
+      "status": "enforced",
+      "mechanisms": [
+        "internal/objectref/objectref.go",
+        "internal/objectref/objectref_test.go",
+        "internal/objectref/objectref_fuzz_test.go"
+      ]
+    },
+    {
+      "id": "NXGO-INV-SES-001",
+      "status": "enforced",
+      "mechanisms": [
+        "internal/sessionhealth/state.go",
+        "internal/sessionhealth/state_test.go"
+      ]
+    },
+    {
+      "id": "NXGO-INV-IPC-002",
+      "status": "enforced",
+      "mechanisms": [
+        "internal/objectref/objectref.go",
+        "internal/objectref/objectref_test.go"
+      ]
+    },
+    {
+      "id": "NXGO-INV-IPC-003",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/fakeagent/fakeagent.go",
+        "internal/fakeagent/fakeagent_test.go"
+      ],
+      "note": "Fake-Agent contract exists; real NX ambiguous-commit recovery is not implemented yet."
+    },
+    {
+      "id": "NXGO-INV-IPC-004",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/fakeagent/fakeagent.go",
+        "internal/fakeagent/fakeagent_test.go"
+      ],
+      "note": "Request-ID idempotency contract exists in Fake Agent; production Agent store is pending."
+    },
+    {
+      "id": "NXGO-INV-TEST-003",
+      "status": "partially_enforced",
+      "mechanisms": [
+        ".github/workflows/nx-self-hosted.yml",
+        "scripts/nx-real-smoke.ps1",
+        "tests/nx/smoke.py"
+      ],
+      "note": "Real-NX fail-closed smoke exists; full supported-release matrix is pending."
+    },
+    {
+      "id": "NXGO-INV-TEST-004",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/fakeagent/fakeagent_test.go",
+        "cmd/nxctl/main.go"
+      ],
+      "note": "Fake-Agent chaos exists; destructive real-NX chaos suite is pending."
+    },
+    {
+      "id": "NXGO-INV-EXEC-001",
+      "status": "planned",
+      "mechanisms": [],
+      "note": "Will become enforceable when the .NET Agent/NxExecutor exists."
+    },
+    {
+      "id": "NXGO-INV-MUT-001",
+      "status": "planned",
+      "mechanisms": [],
+      "note": "Will be enforced by BuilderScope<T> in the .NET Agent."
+    },
+    {
+      "id": "NXGO-INV-COR-001",
+      "status": "planned",
+      "mechanisms": [],
+      "note": "Requires real CAD semantic fixtures and postcondition validators."
+    }
+  ]
+}
