@@ -1,0 +1,37 @@
+name: real-nx-quality-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      nx_home:
+        description: 'Pinned Siemens NX/Designcenter installation root; leave empty to use repository variable NXGO_NX_HOME'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  real-nx:
+    runs-on: [self-hosted, windows, x64, nxgo]
+    timeout-minutes: 30
+    env:
+      NXGO_NX_HOME: ${{ inputs.nx_home || vars.NXGO_NX_HOME }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+      - name: Invariant gate
+        shell: pwsh
+        run: go run ./cmd/invariantcheck
+      - name: Real Siemens NX smoke
+        shell: pwsh
+        run: go run ./cmd/nxctl test nx
+      - name: Upload NX diagnostic artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nx-smoke-${{ github.run_id }}
+          path: artifacts/nx-smoke/**
+          if-no-files-found: warn
