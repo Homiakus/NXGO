@@ -9,9 +9,11 @@ For day-to-day implementation use these documents first:
 1. **[Engineering rules — quick reference](RULES_QUICK_REFERENCE.md)** — compact MUST/MUST NOT checklist.
 2. **[Engineering Standard](ENGINEERING_STANDARD.md)** — normative programming/design rules for Go, C# Agent, NXOpen, IPC, state, codegen, observability and reviews.
 3. **[Testing Playbook](TESTING_PLAYBOOK.md)** — test techniques, NX-in-the-loop execution, warm/isolated workers, matrix/chaos/soak/mutation/fuzz policy.
-4. **[Definition of Done](DEFINITION_OF_DONE.md)** — merge/release completion checklist.
-5. **[Programming invariants](invariants/README.md)** — stable rules derived from concrete NX/NXOpen failure modes.
-6. [Invariant enforcement plan](INVARIANT_ENFORCEMENT.md) — how prose rules become code, analyzers, guards and CI gates.
+4. **[Executable quality gates](EXECUTABLE_QUALITY_GATES.md)** — what is already enforced by code, CI and a real-NX smoke runner.
+5. **[Definition of Done](DEFINITION_OF_DONE.md)** — merge/release completion checklist.
+6. **[Programming invariants](invariants/README.md)** — stable rules derived from concrete NX/NXOpen failure modes.
+7. [Invariant enforcement plan](INVARIANT_ENFORCEMENT.md) — how prose rules become code, analyzers, guards and CI gates.
+8. [`policy/invariant-compliance.json`](../policy/invariant-compliance.json) — machine-readable implementation status for invariant enforcement.
 
 ## Full reading order
 
@@ -21,23 +23,24 @@ For day-to-day implementation use these documents first:
 4. [Engineering Standard](ENGINEERING_STANDARD.md)
 5. [Programming invariants — MUST/MUST NOT rules](invariants/README.md)
 6. [Invariant enforcement plan](INVARIANT_ENFORCEMENT.md)
-7. [Go API design](API_DESIGN.md)
-8. [NX Agent](NX_AGENT.md)
-9. [Protocol](PROTOCOL.md)
-10. [Object and lifetime model](OBJECT_MODEL.md)
-11. [Versioning and capabilities](VERSIONING.md)
-12. [Observability](OBSERVABILITY.md)
-13. [Testing architecture](TESTING.md)
-14. [Testing Playbook](TESTING_PLAYBOOK.md)
-15. [Definition of Done](DEFINITION_OF_DONE.md)
-16. [Security](SECURITY.md)
-17. [CLI](NXCTL.md)
-18. [API scanner and code generation](CODEGEN.md)
-19. [Deployment](DEPLOYMENT.md)
-20. [Quality attributes](QUALITY_ATTRIBUTES.md)
-21. [References](REFERENCES.md)
-22. [ADRs](adr/)
-23. [Implementation master plan](../MASTER_PLAN.md)
+7. [Executable quality gates](EXECUTABLE_QUALITY_GATES.md)
+8. [Go API design](API_DESIGN.md)
+9. [NX Agent](NX_AGENT.md)
+10. [Protocol](PROTOCOL.md)
+11. [Object and lifetime model](OBJECT_MODEL.md)
+12. [Versioning and capabilities](VERSIONING.md)
+13. [Observability](OBSERVABILITY.md)
+14. [Testing architecture](TESTING.md)
+15. [Testing Playbook](TESTING_PLAYBOOK.md)
+16. [Definition of Done](DEFINITION_OF_DONE.md)
+17. [Security](SECURITY.md)
+18. [CLI](NXCTL.md)
+19. [API scanner and code generation](CODEGEN.md)
+20. [Deployment](DEPLOYMENT.md)
+21. [Quality attributes](QUALITY_ATTRIBUTES.md)
+22. [References](REFERENCES.md)
+23. [ADRs](adr/)
+24. [Implementation master plan](../MASTER_PLAN.md)
 
 ## Normative language
 
@@ -63,6 +66,8 @@ The [invariant catalog](invariants/README.md) converts observed NX/NXOpen failur
 
 A P0/P1 invariant violation is an architectural defect, not a style preference.
 
+Enforcement status MUST be represented honestly. `enforced`, `partially_enforced` and `planned` are distinct states; simulated Fake-Agent evidence must never be presented as proof of real Siemens NX behavior. `cmd/invariantcheck` validates the compliance metadata during the fast CI loop.
+
 ## Testing contract
 
 NX is a normal test dependency for NX-dependent behavior. The project deliberately combines cheap pure tests with controlled real-NX workers:
@@ -77,3 +82,16 @@ fast/no-NX
 ```
 
 Mock-only tests cannot establish compatibility or correctness of code that depends on NXOpen/kernel/session behavior. See [TESTING_PLAYBOOK.md](TESTING_PLAYBOOK.md).
+
+## Executable commands already present
+
+```text
+go run ./cmd/nxctl test fast
+go run ./cmd/nxctl test nx
+go run ./cmd/nxctl test matrix
+go run ./cmd/nxctl test chaos
+go run ./cmd/nxctl test soak
+go run ./cmd/nxctl test perf
+```
+
+The real-NX commands are intentionally fail-closed: without Windows, `NXGO_NX_HOME`, and a real Siemens `run_journal.exe`, the NX smoke cannot report PASS. See [EXECUTABLE_QUALITY_GATES.md](EXECUTABLE_QUALITY_GATES.md).
