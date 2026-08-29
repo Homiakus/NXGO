@@ -6,25 +6,27 @@ This directory is the normative design package for NXGO. Implementation is expec
 
 1. [Product requirements](PRODUCT_REQUIREMENTS.md)
 2. [Architecture](ARCHITECTURE.md)
-3. [Go API design](API_DESIGN.md)
-4. [NX Agent](NX_AGENT.md)
-5. [Protocol](PROTOCOL.md)
-6. [Object and lifetime model](OBJECT_MODEL.md)
-7. [Versioning and capabilities](VERSIONING.md)
-8. [Observability](OBSERVABILITY.md)
-9. [Testing](TESTING.md)
-10. [Security](SECURITY.md)
-11. [CLI](NXCTL.md)
-12. [API scanner and code generation](CODEGEN.md)
-13. [Deployment](DEPLOYMENT.md)
-14. [Quality attributes](QUALITY_ATTRIBUTES.md)
-15. [References](REFERENCES.md)
-16. [ADRs](adr/)
-17. [Implementation master plan](../MASTER_PLAN.md)
+3. **[Programming invariants — MUST/MUST NOT rules](invariants/README.md)**
+4. [Invariant enforcement plan](INVARIANT_ENFORCEMENT.md)
+5. [Go API design](API_DESIGN.md)
+6. [NX Agent](NX_AGENT.md)
+7. [Protocol](PROTOCOL.md)
+8. [Object and lifetime model](OBJECT_MODEL.md)
+9. [Versioning and capabilities](VERSIONING.md)
+10. [Observability](OBSERVABILITY.md)
+11. [Testing](TESTING.md)
+12. [Security](SECURITY.md)
+13. [CLI](NXCTL.md)
+14. [API scanner and code generation](CODEGEN.md)
+15. [Deployment](DEPLOYMENT.md)
+16. [Quality attributes](QUALITY_ATTRIBUTES.md)
+17. [References](REFERENCES.md)
+18. [ADRs](adr/)
+19. [Implementation master plan](../MASTER_PLAN.md)
 
 ## Normative language
 
-`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are used in the RFC 2119 sense. Where documents disagree, accepted ADRs take precedence, then `ARCHITECTURE.md`, then domain-specific documents.
+`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are used in the RFC 2119 sense. Where documents disagree, accepted ADRs take precedence, then the invariant catalog for safety constraints, then `ARCHITECTURE.md`, then domain-specific documents.
 
 ## Architectural thesis
 
@@ -39,3 +41,9 @@ NXGO should feel like a native Go library while executing through Siemens-suppor
 - a **Go supervisor/test runner** for process control and observability.
 
 This separation is the central mechanism for hiding NX complexity without sacrificing access to advanced functionality.
+
+## Safety contract
+
+The [invariant catalog](invariants/README.md) converts observed NX/NXOpen failure modes into stable rules such as: no arbitrary-thread NXOpen calls, no stale-handle reuse, unconditional Builder cleanup, no blind mutation retries, no single-version compatibility assumptions and no screenshot-only correctness claims.
+
+A P0/P1 invariant violation is an architectural defect, not a style preference.

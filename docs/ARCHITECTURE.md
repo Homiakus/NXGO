@@ -36,7 +36,8 @@ The architecture therefore uses a process boundary instead of forcing Siemens ru
 | auth/handshake             |
 | request validation         |
 | object registry            |
-| NX command queue           |
+| session health/epoch       |
+| NX safe executor           |
 | capability adapters        |
 | structured logging         |
 +-------------+--------------+
@@ -48,7 +49,7 @@ The architecture therefore uses a process boundary instead of forcing Siemens ru
 +----------------------------+
 ```
 
-A separate Go process, `nxctl`/supervisor, discovers installations, launches workers, tails external logs, applies timeouts and collects crash artifacts.
+A separate Go process, `nxctl`/supervisor, discovers installations, launches workers, tails external logs, applies timeouts, classifies session health and collects crash artifacts.
 
 ## 3. Dependency rule
 
@@ -64,9 +65,9 @@ Dependencies point inward toward stable NXGO contracts:
 
 RPC handlers MUST NOT call NXOpen directly from arbitrary transport threads.
 
-Every NX-affecting request is converted into an internal command and scheduled on the NX-safe executor. Ordering is explicit. Reads MAY be optimized later only after proving a given NX API is safe; default is serialized execution.
+Every NX-affecting request is converted into an internal command and scheduled on the NX-safe executor. Ordering is explicit. Reads MAY be optimized later only after proving a given NX API is safe; default is serialized execution. The executor MUST model reentrancy/callback context rather than relying on a naive mutex.
 
-Long operations report progress/events but remain one logical operation.
+Long operations report progress/events but remain one logical operation. Cancellation never implies unsafe thread abort; supervisor termination is the last-resort recovery mechanism for a hung/suspect worker.
 
 ## 5. Domain modules
 
@@ -106,29 +107,35 @@ High-level code SHOULD prefer workflow/domain APIs. Raw access is supported but 
 NX is treated as an external stateful engine that can:
 
 - hang;
-- raise NX exceptions;
+- raise recoverable NX exceptions;
+- enter suspect/poisoned state after kernel/update failures;
 - terminate with a fatal error;
 - lose a license;
 - present version-specific behavior;
-- leave a partially modified work part.
+- hold partially loaded assemblies;
+- leave a partially modified work part;
+- invalidate previously live objects.
 
-Therefore the supervisor owns process-level recovery. The Agent owns in-session cleanup/rollback. The Go SDK owns client-visible deadlines and typed error translation.
+Therefore the supervisor owns process-level recovery. The Agent owns in-session cleanup/rollback, session health classification, object epoch/lifetime and callback ownership. The Go SDK owns client-visible deadlines, idempotency semantics and typed error translation.
 
 ## 8. Transaction strategy
 
 Mutations SHOULD execute under named NX undo marks when the API supports it.
 
 ```text
-begin logical transaction
+begin logical model mutation
   create undo mark
-  execute commands
-  validate
-  success -> retain/commit state
-  failure -> rollback to mark
+  create/configure single-attempt builders
+  commit
+  perform required NX update
+  validate semantic postconditions
+  success -> retain state
+  failure -> rollback to mark when safe
+  always destroy builders/temp objects
 end
 ```
 
-Transactions are session-local and do not pretend to provide ACID semantics across NX plus external services.
+Transactions are session-local and do not pretend to provide ACID semantics across NX plus external services. External side effects use compensation/temporary-artifact strategies.
 
 ## 9. Performance strategy
 
@@ -140,17 +147,17 @@ Avoid N+1 IPC patterns. Provide bulk operations such as:
 - batch export;
 - one drawing-generation request rather than dozens of remote Builder manipulations.
 
-Protocol messages carry compact stable IDs/handles rather than repeated full object descriptions.
+Protocol messages carry compact stable IDs/handles rather than repeated full object descriptions. Handles always carry session/epoch identity and are invalidated on restart.
 
 ## 10. Extension strategy
 
 New NX release support proceeds through:
 
 1. scan installed NXOpen assemblies/metadata;
-2. generate release manifest;
-3. diff against previous manifest;
+2. generate a release-specific manifest without deleting previous manifests;
+3. diff against previous supported manifests/Siemens API reports;
 4. regenerate low-level bindings/adapters;
-5. compile Agent;
+5. compile the release-compatible Agent runtime;
 6. run contract tests;
 7. run NX-backed regression matrix;
 8. mark capabilities supported only after passing gates.
@@ -162,8 +169,17 @@ The following require an ADR to change:
 - Pure-Go public SDK;
 - out-of-process SDK/Agent boundary;
 - no live NX object serialization;
-- serialized NX executor by default;
+- serialized, reentrancy-aware NX executor by default;
+- session epoch invalidates handles after restart;
 - typed versioned protocol;
 - capability negotiation;
 - generated raw + handwritten high-level split;
-- local IPC secured to the current user by default.
+- local IPC secured to the current user by default;
+- poisoned NX sessions are not reused;
+- high-level mutations include cleanup/update/postcondition semantics.
+
+## 12. Programming invariants are normative
+
+The detailed [NXGO Programming Invariants](invariants/README.md) are part of this architecture. They encode concrete failure modes found in NX/NXOpen development: main-thread violations, stale objects, failed Builder reuse, incomplete update, journal stickiness, runtime/API drift, partial assembly loading, license-dependent APIs, unit mistakes, unsafe retries, modal UI and nondeterministic test environments.
+
+Implementations MUST satisfy applicable invariants. When possible, enforce them structurally using the mechanisms in [Invariant enforcement](INVARIANT_ENFORCEMENT.md) rather than relying on developer memory.
