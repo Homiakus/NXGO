@@ -18,11 +18,7 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: true
-      - name: Go tests with race detector
-        run: go test -race ./...
-      - name: Go vet
-        run: go vet ./...
-      - name: Normative invariant gate
-        run: go run ./cmd/invariantcheck
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
       - name: Fake-Agent chaos contract
-        run: go test ./internal/fakeagent -run Chaos -count=1
+        run: go run ./cmd/nxctl test chaos
