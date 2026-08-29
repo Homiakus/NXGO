@@ -85,17 +85,42 @@ NXGO deliberately exposes several levels rather than forcing every use case thro
 - Interactive NX sessions and isolated worker/test sessions are separate first-class modes.
 - CI uses pinned NX builds; upgrades are validated through a compatibility matrix before adoption.
 
+## Engineering and testing rules
+
+NXGO treats programming rules and testing rules as one engineering contract. Start here:
+
+- [`docs/RULES_QUICK_REFERENCE.md`](docs/RULES_QUICK_REFERENCE.md) — daily MUST/MUST NOT checklist;
+- [`docs/ENGINEERING_STANDARD.md`](docs/ENGINEERING_STANDARD.md) — normative programming/design standard;
+- [`docs/TESTING_PLAYBOOK.md`](docs/TESTING_PLAYBOOK.md) — fast tests, fake Agent, warm NX, isolated NX, matrix, fuzz, mutation, metamorphic, differential, chaos, soak and performance testing;
+- [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md) — merge/release completion gate;
+- [`docs/invariants/README.md`](docs/invariants/README.md) — stable safety invariants derived from real NX/NXOpen failure modes.
+
+For NX-dependent behavior, mock-only confidence is insufficient. The target development loop is:
+
+```text
+edit
+ -> fast/no-NX tests
+ -> fake Agent/contracts
+ -> affected test in warm pinned NX
+ -> semantic CAD assertions + logs/session health
+ -> reuse or recycle worker
+ -> result
+```
+
+Crash/poison/startup/recovery cases use isolated NX processes, while supported-version claims require the NX compatibility matrix.
+
 ## Repository documentation
 
-The initial design package lives in [`docs/`](docs/README.md):
+The design package lives in [`docs/`](docs/README.md) and covers:
 
 - architecture and ADRs;
+- engineering/programming rules and invariants;
 - Go SDK/API specification;
 - bridge and protocol contracts;
 - object-handle and transaction model;
 - versioning and capability negotiation;
 - observability and continuous NX log collection;
-- testing strategy and NX-backed CI;
+- testing architecture and NX-in-the-loop playbook;
 - security model;
 - CLI (`nxctl`) specification;
 - API scanner/code generation design;
