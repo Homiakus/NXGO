@@ -9,6 +9,23 @@ The plan is deliberately staged so the project proves the risky boundaries befor
 
 A Go developer can import NXGO and perform high-value Siemens NX automation through a stable API without managing NXOpen builders, Siemens DLL loading, NX main-thread execution, remote object lifetime, release differences, logs or process recovery.
 
+## Implementation checkpoint — executable quality foundation
+
+The architecture-only phase has moved into implementation bootstrap. Already present in `main`:
+
+- Go module and initial internal safety primitives;
+- `nxctl test fast|nx|matrix|chaos|soak|perf` command surface;
+- race-enabled fast CI and invariant policy checker;
+- machine-readable invariant-compliance map;
+- stale session/epoch object-reference tests and fuzz seed target;
+- session-health state machine preventing in-place reuse of poisoned/lost sessions;
+- Fake-Agent idempotency/ambiguous-response chaos contract;
+- fail-closed real Siemens NX smoke via `run_journal.exe` + NXOpen Python journal;
+- self-hosted Windows NX workflow that cannot pass without an explicit NX installation;
+- executable quality-gate documentation and PR evidence template.
+
+The first `fast-quality-gates` workflow run for this bootstrap passed `go test -race`, `go vet`, invariant checking and the Fake-Agent chaos contract. This does **not** yet prove the real NX Agent architecture; real-NX smoke requires an authorized Windows runner with Siemens NX installed.
+
 ---
 
 ## Phase 0 — Architecture baseline [DONE: documentation]
@@ -22,6 +39,9 @@ A Go developer can import NXGO and perform high-value Siemens NX automation thro
 - [x] version/capability model;
 - [x] observability strategy;
 - [x] NX-backed testing strategy;
+- [x] engineering standard/programming rules;
+- [x] programming invariant catalog;
+- [x] testing playbook and Definition of Done;
 - [x] security baseline;
 - [x] codegen/scanner design;
 - [x] deployment and CLI specifications.
@@ -32,25 +52,31 @@ No production implementation begins by adding ad-hoc cgo bindings or exposing Si
 
 ---
 
-## Phase 1 — Repository/build skeleton
+## Phase 1 — Repository/build skeleton [IN PROGRESS]
 
 ### Tasks
 
-- [ ] create Go module and package layout;
+- [x] create Go module and initial package layout;
 - [ ] create .NET Agent solution with release adapter boundary;
 - [ ] create protocol schema project;
-- [ ] create `nxctl` command;
-- [ ] add formatting/linting/unit-test CI that does not require NX;
-- [ ] add build scripts for Windows developer environment;
-- [ ] document exact supported compiler/runtime versions discovered from target NX builds;
+- [x] create initial `nxctl` command and test-loop surface;
+- [x] add formatting/linting/unit/race CI that does not require NX;
+- [x] add executable invariant checker and compliance metadata;
+- [x] add fail-closed Windows real-NX smoke script/test journal;
+- [ ] add production build scripts for Windows developer environment;
+- [ ] document exact supported compiler/runtime versions discovered from target NX builds in executable manifests;
 - [ ] add version metadata generation.
 
 ### Tests
 
-- Go unit smoke;
-- .NET unit smoke;
-- protobuf/codegen reproducibility;
-- `CGO_ENABLED=0 go test ./...` for Go-side packages where applicable.
+- [x] Go unit smoke;
+- [x] race-enabled Go suite in GitHub Actions;
+- [x] `go vet`;
+- [x] invariant-policy gate;
+- [x] Fake-Agent chaos/idempotency contract;
+- [ ] .NET unit smoke;
+- [ ] protobuf/codegen reproducibility;
+- [ ] explicit `CGO_ENABLED=0 go test ./...` CI gate for public Go packages.
 
 ### Exit gate
 
@@ -70,7 +96,8 @@ Fresh checkout can build non-NX components deterministically; Agent skeleton bui
 - [ ] log/event stream;
 - [ ] context cancellation/deadlines;
 - [ ] named-pipe transport abstraction;
-- [ ] fake Agent server for Go tests.
+- [ ] fake Agent server for Go tests;
+- [x] initial in-process Fake-Agent failure semantics for request-ID idempotency and session poison.
 
 ### Tests
 
@@ -80,7 +107,9 @@ Fresh checkout can build non-NX components deterministically; Agent skeleton bui
 - malformed message;
 - oversized message;
 - unauthorized local client;
-- stream backpressure.
+- stream backpressure;
+- [x] committed mutation + lost response does not duplicate on replay;
+- [x] poisoned simulated session rejects further work.
 
 ### Exit gate
 
@@ -96,25 +125,28 @@ Go client completes handshake/call/log-stream against fake Agent with no NX inst
 - [ ] discover exact NX release/build;
 - [ ] secured pipe endpoint;
 - [ ] serialized NX command queue/main-thread gateway;
-- [ ] health state;
+- [ ] health state integrated with Agent executor;
 - [ ] structured logging;
 - [ ] correlation markers in NX log where supported;
 - [ ] first safe command: session information;
-- [ ] first part command: open/query/save/close controlled fixture.
+- [ ] first part command: open/query/save/close controlled fixture;
+- [x] preliminary real-NX `run_journal.exe` smoke proving NXOpen session access without claiming Agent functionality.
 
 ### Tests
 
-- attach to real interactive NX;
-- start controlled worker;
-- exact build reported;
-- repeated connect/disconnect;
-- timeout while command queued;
-- Agent exception translated;
-- NX process termination detected.
+- [x] fail-closed external NX smoke harness exists;
+- [ ] execute the smoke on authorized pinned NX builds and record exact versions;
+- [ ] attach to real interactive NX;
+- [ ] start controlled Agent worker;
+- [ ] exact build reported through Agent handshake;
+- [ ] repeated connect/disconnect;
+- [ ] timeout while command queued;
+- [ ] Agent exception translated;
+- [ ] NX process termination detected.
 
 ### Exit gate
 
-`nxctl status` and a Go integration test communicate reliably with real pinned NX.
+`nxctl status` and a Go integration test communicate reliably with real pinned NX through the NXGO Agent, not only through the preliminary journal smoke.
 
 ---
 
@@ -129,6 +161,7 @@ Go client completes handshake/call/log-stream against fake Agent with no NX inst
 - [ ] timeout/watchdog;
 - [ ] NX syslog discovery/follow;
 - [ ] merge NX/Agent/runner logs;
+- [x] preliminary per-run artifact directory in real-NX smoke;
 - [ ] failure artifact bundling;
 - [ ] process crash/fatal-error classification;
 - [ ] worker recycle policy;
@@ -152,11 +185,12 @@ Every worker failure is classified and leaves sufficient diagnostics for reprodu
 
 ### Tasks
 
-- [ ] opaque ObjectRef protocol;
+- [x] define initial session/epoch/generation-aware `ObjectRef` safety primitive;
+- [ ] opaque ObjectRef wire protocol;
 - [ ] typed Go proxies;
 - [ ] registry quotas;
 - [ ] scopes/batch release;
-- [ ] stale-handle detection;
+- [x] initial stale session/epoch validation + fuzz target;
 - [ ] NX undo-mark transaction manager;
 - [ ] rollback and dirty-session state;
 - [ ] staging for file outputs.
@@ -164,7 +198,8 @@ Every worker failure is classified and leaves sufficient diagnostics for reprodu
 ### Tests
 
 - handle release/leak tests;
-- stale handle after restart;
+- [x] stale handle after epoch/session change at pure-Go layer;
+- [ ] stale handle after real NX restart;
 - rollback success;
 - injected rollback failure;
 - quota enforcement;
@@ -294,6 +329,7 @@ Applications can describe coarse CAD jobs without orchestrating individual NX op
 - [ ] formal compatibility matrix;
 - [ ] validated pinned 2512 build;
 - [ ] validated pinned 2606 build;
+- [x] initial `nxctl test matrix` command accepts explicit side-by-side NX roots for real smoke;
 - [ ] release adapter cleanup;
 - [ ] capability fallback tests;
 - [ ] automated NX upgrade report;
@@ -334,7 +370,8 @@ Security tests prove hardened mode disables dangerous escape hatches.
 - [ ] handle leak detector;
 - [ ] queue saturation behavior;
 - [ ] log throughput tests;
-- [ ] profile Go supervisor and Agent hotspots.
+- [ ] profile Go supervisor and Agent hotspots;
+- [x] initial Fake-Agent `chaos`, `soak`, and `perf` command entry points (simulation only).
 
 ### Exit gate
 
@@ -376,15 +413,32 @@ Published performance baseline and no unbounded growth in defined soak workload.
 - [ ] troubleshooting guide based on real failures;
 - [ ] NX error code mapping notes;
 - [ ] ESKD drawing policy plugin specification;
-- [ ] architecture diagrams as Mermaid/PlantUML if useful.
+- [ ] architecture diagrams as Mermaid/PlantUML if useful;
+- [x] Engineering Standard, Testing Playbook, invariant catalog, executable quality-gate guide and Definition of Done.
 
 ## Developer experience
 
 - [ ] `nxctl init` project scaffolding;
-- [ ] local fake Agent mode;
+- [ ] local named-pipe Fake Agent mode;
 - [ ] generated API searchable docs;
 - [ ] VS Code/IDE task examples;
-- [ ] one-command developer smoke test.
+- [x] one-command fast developer gate (`nxctl test fast`);
+- [x] one-command preliminary real-NX smoke (`nxctl test nx`) with fail-closed environment checks;
+- [ ] warm-NX `--watch` development loop.
+
+## Testing campaigns
+
+- [ ] property/model-based state-machine generator for session/transport lifecycle;
+- [x] native Go fuzz target for stale epoch object references;
+- [ ] broader protocol/parser fuzz corpus;
+- [ ] Go mutation testing campaign for session/retry/capability logic;
+- [ ] C# mutation testing for Agent safety primitives;
+- [ ] real-NX semantic fixture suite;
+- [ ] metamorphic CAD tests;
+- [ ] direct-NXOpen vs NXGO differential fixtures;
+- [ ] Check-Mate independent oracle integration;
+- [ ] destructive isolated-NX chaos suite;
+- [ ] long-running real-NX resource soak.
 
 ## Future domains
 
@@ -400,12 +454,15 @@ Published performance baseline and no unbounded growth in defined soak workload.
 An iteration is complete only when:
 
 1. scope is implemented;
-2. relevant unit/contract tests pass;
-3. required real NX tests pass for affected validated builds;
-4. logs contain correlation data;
-5. resource cleanup is verified;
-6. docs/API examples are updated;
-7. new architectural findings update this plan/ADR;
-8. no new Siemens proprietary artifact is committed;
-9. `main` remains buildable for non-NX CI;
-10. the commit clearly states what was verified.
+2. applicable `NXGO-INV-*` IDs are identified and compliance metadata is updated when enforcement changes;
+3. relevant unit/contract/property/fuzz tests pass;
+4. required real NX tests pass for affected validated builds;
+5. semantic CAD postconditions are checked for CAD-affecting mutations;
+6. logs contain correlation data where runtime integration exists;
+7. resource cleanup/session health is verified;
+8. docs/API examples are updated;
+9. new architectural findings update this plan/ADR/invariant catalog;
+10. no new Siemens proprietary artifact is committed;
+11. `main` remains buildable for non-NX CI;
+12. the commit clearly distinguishes simulated evidence from real-NX evidence;
+13. the change satisfies `docs/DEFINITION_OF_DONE.md`.
