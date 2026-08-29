@@ -20,7 +20,7 @@ func main() {
 
 func run(args []string) error {
     if len(args) < 2 || args[0] != "test" {
-        return errors.New("usage: nxctl test <fast|nx|matrix|chaos|soak|perf>")
+        return errors.New("usage: nxctl test <fast|fuzz|nx|matrix|chaos|soak|perf>")
     }
     ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
     defer cancel()
@@ -28,8 +28,13 @@ func run(args []string) error {
     switch args[1] {
     case "fast":
         if err := runCmd(ctx, "go", "test", "-race", "./..."); err != nil { return err }
+        if err := runWithEnv(ctx, []string{"CGO_ENABLED=0"}, "go", "test", "./..."); err != nil { return err }
         if err := runCmd(ctx, "go", "vet", "./..."); err != nil { return err }
         return runCmd(ctx, "go", "run", "./cmd/invariantcheck")
+    case "fuzz":
+        fuzzTime := strings.TrimSpace(os.Getenv("NXGO_FUZZTIME"))
+        if fuzzTime == "" { fuzzTime = "30s" }
+        return runCmd(ctx, "go", "test", "./internal/objectref", "-run", "^$", "-fuzz", "FuzzReferenceNeverValidAcrossDifferentEpoch", "-fuzztime", fuzzTime)
     case "nx":
         return runRealNX(ctx, os.Getenv("NXGO_NX_HOME"))
     case "matrix":
@@ -57,6 +62,16 @@ func runRealNX(ctx context.Context, home string) error {
     if err := os.Setenv("NXGO_NX_HOME", home); err != nil { return err }
     defer os.Setenv("NXGO_NX_HOME", old)
     return runCmd(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/nx-real-smoke.ps1")
+}
+
+func runWithEnv(ctx context.Context, env []string, name string, args ...string) error {
+    cmd := exec.CommandContext(ctx, name, args...)
+    cmd.Env = append(os.Environ(), env...)
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+    cmd.Stdin = os.Stdin
+    if err := cmd.Run(); err != nil { return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err) }
+    return nil
 }
 
 func runCmd(ctx context.Context, name string, args ...string) error {
