@@ -92,8 +92,10 @@ NXGO treats programming rules and testing rules as one engineering contract. Sta
 - [`docs/RULES_QUICK_REFERENCE.md`](docs/RULES_QUICK_REFERENCE.md) — daily MUST/MUST NOT checklist;
 - [`docs/ENGINEERING_STANDARD.md`](docs/ENGINEERING_STANDARD.md) — normative programming/design standard;
 - [`docs/TESTING_PLAYBOOK.md`](docs/TESTING_PLAYBOOK.md) — fast tests, fake Agent, warm NX, isolated NX, matrix, fuzz, mutation, metamorphic, differential, chaos, soak and performance testing;
+- [`docs/EXECUTABLE_QUALITY_GATES.md`](docs/EXECUTABLE_QUALITY_GATES.md) — executable enforcement already present in the repository;
 - [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md) — merge/release completion gate;
-- [`docs/invariants/README.md`](docs/invariants/README.md) — stable safety invariants derived from real NX/NXOpen failure modes.
+- [`docs/invariants/README.md`](docs/invariants/README.md) — stable safety invariants derived from real NX/NXOpen failure modes;
+- [`policy/invariant-compliance.json`](policy/invariant-compliance.json) — machine-readable enforcement status.
 
 For NX-dependent behavior, mock-only confidence is insufficient. The target development loop is:
 
@@ -109,6 +111,23 @@ edit
 
 Crash/poison/startup/recovery cases use isolated NX processes, while supported-version claims require the NX compatibility matrix.
 
+## Executable test loops
+
+The repository now contains an initial runnable quality-gate implementation:
+
+```text
+go run ./cmd/nxctl test fast
+go run ./cmd/nxctl test nx
+go run ./cmd/nxctl test matrix
+go run ./cmd/nxctl test chaos
+go run ./cmd/nxctl test soak
+go run ./cmd/nxctl test perf
+```
+
+`fast` runs race-enabled Go tests, `go vet` and the invariant policy checker. The real-NX loop uses `scripts/nx-real-smoke.ps1` and `tests/nx/smoke.py`; it deliberately fails unless it executes through a real Siemens `run_journal.exe` on Windows with `NXGO_NX_HOME` configured.
+
+GitHub Actions contains a public fast-loop workflow and a separate self-hosted Windows real-NX workflow. Fake-Agent tests are explicitly labeled simulation and are not accepted as evidence of NX kernel/runtime compatibility.
+
 ## Repository documentation
 
 The design package lives in [`docs/`](docs/README.md) and covers:
@@ -121,6 +140,7 @@ The design package lives in [`docs/`](docs/README.md) and covers:
 - versioning and capability negotiation;
 - observability and continuous NX log collection;
 - testing architecture and NX-in-the-loop playbook;
+- executable quality gates and compliance status;
 - security model;
 - CLI (`nxctl`) specification;
 - API scanner/code generation design;
@@ -146,7 +166,7 @@ NXGO does not attempt to:
 
 ## Status
 
-**Architecture/design phase.** The repository is being initialized with a detailed implementation package before production code is introduced.
+**Implementation bootstrap in progress.** Architecture and engineering standards are established; the repository now has a compiling Go test/control skeleton, executable invariant gates, Fake-Agent recovery contracts and a fail-closed real-NX smoke path. The production .NET NX Agent, warm-worker orchestration and semantic CAD fixture suite remain planned in `MASTER_PLAN.md`.
 
 See [`MASTER_PLAN.md`](MASTER_PLAN.md) for the implementation sequence and quality gates.
 
