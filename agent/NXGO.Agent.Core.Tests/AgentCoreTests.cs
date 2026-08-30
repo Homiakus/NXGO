@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Text;
 using NXGO.Agent.Core;
+using Xunit;
 
 namespace NXGO.Agent.Core.Tests;
 
