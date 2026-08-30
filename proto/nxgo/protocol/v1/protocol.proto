@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package nxgo.protocol.v1;
+
+option go_package = "github.com/Homiakus/NXGO/gen/go/nxgo/protocol/v1;protocolv1";
+option csharp_namespace = "NXGO.Protocol.V1";
+
+enum SessionMode {
+  SESSION_MODE_UNSPECIFIED = 0;
+  SESSION_MODE_WORKER = 1;
+  SESSION_MODE_INTERACTIVE = 2;
+}
+
+enum SessionHealth {
+  SESSION_HEALTH_UNSPECIFIED = 0;
+  SESSION_HEALTH_HEALTHY = 1;
+  SESSION_HEALTH_SUSPECT = 2;
+  SESSION_HEALTH_POISONED = 3;
+  SESSION_HEALTH_LOST = 4;
+}
+
+enum ResponseStatus {
+  RESPONSE_STATUS_UNSPECIFIED = 0;
+  RESPONSE_STATUS_OK = 1;
+  RESPONSE_STATUS_ERROR = 2;
+  RESPONSE_STATUS_CANCELLED = 3;
+}
+
+enum ErrorKind {
+  ERROR_KIND_UNSPECIFIED = 0;
+  ERROR_KIND_INVALID_ARGUMENT = 1;
+  ERROR_KIND_INVALID_STATE = 2;
+  ERROR_KIND_STALE_OBJECT = 3;
+  ERROR_KIND_PARTIAL_LOAD = 4;
+  ERROR_KIND_LICENSE_UNAVAILABLE = 5;
+  ERROR_KIND_UNSUPPORTED_CAPABILITY = 6;
+  ERROR_KIND_NX_EXCEPTION = 7;
+  ERROR_KIND_BUILDER_COMMIT_FAILED = 8;
+  ERROR_KIND_UPDATE_FAILED = 9;
+  ERROR_KIND_ROLLBACK_FAILED = 10;
+  ERROR_KIND_SESSION_BUSY = 11;
+  ERROR_KIND_SESSION_LOST = 12;
+  ERROR_KIND_SESSION_POISONED = 13;
+  ERROR_KIND_TIMEOUT = 14;
+  ERROR_KIND_PROCESS_CRASH = 15;
+  ERROR_KIND_PROTOCOL = 16;
+  ERROR_KIND_UNAUTHORIZED = 17;
+}
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message ClientHello {
+  ProtocolVersion protocol = 1;
+  string sdk_version = 2;
+  SessionMode requested_mode = 3;
+  repeated string requested_capabilities = 4;
+  uint64 client_process_id = 5;
+  bytes connection_nonce = 6;
+}
+
+message ServerLimits {
+  uint32 max_payload_bytes = 1;
+  uint32 max_batch_items = 2;
+  uint32 max_in_flight_requests = 3;
+}
+
+message ServerHello {
+  ProtocolVersion protocol = 1;
+  string agent_version = 2;
+  string nx_release = 3;
+  string nx_build = 4;
+  uint64 nx_process_id = 5;
+  string session_id = 6;
+  uint64 session_epoch = 7;
+  SessionMode mode = 8;
+  SessionHealth health = 9;
+  repeated string capabilities = 10;
+  ServerLimits limits = 11;
+}
+
+message RequestEnvelope {
+  string request_id = 1;
+  string correlation_id = 2;
+  string test_id = 3;
+  string operation = 4;
+  int64 deadline_unix_millis = 5;
+  string transaction_id = 6;
+  bytes payload = 7;
+  map<string, string> trace_metadata = 8;
+}
+
+message Warning {
+  string code = 1;
+  string message = 2;
+}
+
+message CallTiming {
+  uint64 queue_wait_micros = 1;
+  uint64 nx_execution_micros = 2;
+  uint64 serialization_micros = 3;
+  uint64 total_micros = 4;
+}
+
+message ErrorEnvelope {
+  ErrorKind kind = 1;
+  int64 nx_code = 2;
+  string message = 3;
+  string operation = 4;
+  bool retryable = 5;
+  bool recoverable = 6;
+  bool poisoned = 7;
+  SessionHealth session_health = 8;
+  string correlation_id = 9;
+  string diagnostic_id = 10;
+}
+
+message ObjectRef {
+  string session_id = 1;
+  uint64 session_epoch = 2;
+  uint64 object_id = 3;
+  uint32 generation = 4;
+  string kind = 5;
+  optional uint64 native_tag = 6;
+  string lease_scope_id = 7;
+}
+
+message ArtifactRef {
+  string artifact_id = 1;
+  string kind = 2;
+  string relative_path = 3;
+  uint64 size_bytes = 4;
+}
+
+message ResponseEnvelope {
+  string request_id = 1;
+  ResponseStatus status = 2;
+  bytes payload = 3;
+  ErrorEnvelope error = 4;
+  repeated Warning warnings = 5;
+  CallTiming timing = 6;
+  repeated ObjectRef objects = 7;
+  repeated ArtifactRef artifacts = 8;
+}
+
+message CancelRequest {
+  string request_id = 1;
+  string reason = 2;
+}
+
+message LogEvent {
+  string run_id = 1;
+  string request_id = 2;
+  string test_id = 3;
+  string source = 4;
+  string severity = 5;
+  string message = 6;
+  int64 timestamp_unix_millis = 7;
+  map<string, string> fields = 8;
+}
+
+message WireMessage {
+  string message_id = 1;
+
+  oneof body {
+    ClientHello client_hello = 10;
+    ServerHello server_hello = 11;
+    RequestEnvelope request = 12;
+    ResponseEnvelope response = 13;
+    CancelRequest cancel = 14;
+    LogEvent log_event = 15;
+  }
+
+  reserved 2 to 9;
+  reserved 16 to 31;
+}
