@@ -12,11 +12,52 @@
     },
     {
       "id": "NXGO-INV-SES-001",
-      "status": "enforced",
+      "status": "partially_enforced",
       "mechanisms": [
         "internal/sessionhealth/state.go",
-        "internal/sessionhealth/state_test.go"
-      ]
+        "internal/sessionhealth/state_test.go",
+        "agent/NXGO.Agent.Core/SessionHealth.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
+      ],
+      "note": "Go and Agent-core state machines refuse reuse of non-healthy sessions. Real NX fatal/modeler classification and supervisor kill/restart evidence are still pending."
+    },
+    {
+      "id": "NXGO-INV-EXEC-001",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "agent/NXGO.Agent.Core/NxExecutor.cs",
+        "agent/NXGO.Agent.Core/NamedPipeRequestServer.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs"
+      ],
+      "note": "Transport work is queued and only a bound execution thread may drain it. Dedicated-worker NX host binds/drains on its entry thread; pinned real-NX validation and architecture analyzer are pending."
+    },
+    {
+      "id": "NXGO-INV-EXEC-002",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "agent/NXGO.Agent.Core/NxExecutor.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
+      ],
+      "note": "Naive mutex execution is avoided and wrong-thread draining is rejected. Explicit NX callback reentrancy/call-depth policy is not yet implemented."
+    },
+    {
+      "id": "NXGO-INV-MUT-001",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "agent/NXGO.Agent.Core/BuilderScope.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
+      ],
+      "note": "BuilderScope guarantees supplied destroy cleanup on success/failure in core tests. Real NX Builder adapters must prove every created Siemens Builder is wrapped."
+    },
+    {
+      "id": "NXGO-INV-MUT-002",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "agent/NXGO.Agent.Core/BuilderScope.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
+      ],
+      "note": "CommitOnce rejects a second commit attempt on the same BuilderScope. Real NX recipes and retry factory logic are pending."
     },
     {
       "id": "NXGO-INV-IPC-002",
@@ -50,9 +91,11 @@
       "mechanisms": [
         ".github/workflows/nx-self-hosted.yml",
         "scripts/nx-real-smoke.ps1",
-        "tests/nx/smoke.py"
+        "tests/nx/smoke.py",
+        "agent/NXGO.Agent.NXHost/NXGO.Agent.NXHost.csproj",
+        "scripts/build-agent.ps1"
       ],
-      "note": "Real-NX fail-closed smoke exists; full supported-release matrix is pending."
+      "note": "Real-NX fail-closed smoke and NXHost build path exist; an authorized self-hosted pinned NX run and full supported-release matrix are pending."
     },
     {
       "id": "NXGO-INV-TEST-004",
@@ -62,18 +105,6 @@
         "cmd/nxctl/main.go"
       ],
       "note": "Fake-Agent chaos exists; destructive real-NX chaos suite is pending."
-    },
-    {
-      "id": "NXGO-INV-EXEC-001",
-      "status": "planned",
-      "mechanisms": [],
-      "note": "Will become enforceable when the .NET Agent/NxExecutor exists."
-    },
-    {
-      "id": "NXGO-INV-MUT-001",
-      "status": "planned",
-      "mechanisms": [],
-      "note": "Will be enforced by BuilderScope<T> in the .NET Agent."
     },
     {
       "id": "NXGO-INV-COR-001",
