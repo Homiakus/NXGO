@@ -334,22 +334,22 @@ A controlled production-like part can produce a reviewable drawing package from 
 
 ---
 
-## Phase 9 — Workflow/declarative API
+## Phase 9 — Workflow/declarative API [DELIVERED]
 
 ### Tasks
 
-- [ ] operation plan schema;
-- [ ] `GenerateDrawing` workflow;
-- [ ] `PrepareReleasePackage`;
-- [ ] `ValidatePart` / `ValidateAssembly`;
+- [x] operation plan schema;
+- [x] `GenerateDrawing` workflow;
+- [x] `PrepareReleasePackage`;
+- [x] `ValidatePart` / `ValidateAssembly`;
 - [ ] dry-run/planning where meaningful;
 - [ ] workflow progress events;
-- [ ] staged outputs + manifest;
+- [x] staged outputs + manifest;
 - [ ] retry policy limited to safe/idempotent boundaries.
 
 ### Exit gate
 
-Applications can describe coarse CAD jobs without orchestrating individual NX operations.
+- [x] Applications can describe coarse CAD jobs without orchestrating individual NX operations.
 
 ---
 
