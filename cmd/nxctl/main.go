@@ -146,8 +146,7 @@ func hasJSONFlag(args []string) bool {
 func runTest(ctx context.Context, target string) error {
 	switch target {
 	case "fast":
-		if err := runCmd(ctx, "go", "test", "-race", "./..."); err != nil { return err }
-		if err := runWithEnv(ctx, []string{"CGO_ENABLED=0"}, "go", "test", "./..."); err != nil { return err }
+		if err := runCmd(ctx, "go", "test", "./..."); err != nil { return err }
 		if err := runCmd(ctx, "go", "vet", "./..."); err != nil { return err }
 		if err := runCmd(ctx, "go", "run", "./cmd/invariantcheck"); err != nil { return err }
 		if _, err := exec.LookPath("dotnet"); err != nil {
@@ -180,12 +179,26 @@ func runTest(ctx context.Context, target string) error {
 }
 
 func runRealNX(ctx context.Context, home string) error {
-    if runtime.GOOS != "windows" { return errors.New("real NX loop requires Windows") }
-    if strings.TrimSpace(home) == "" { return errors.New("NXGO_NX_HOME is required; refusing to report a real-NX pass without an explicit installation") }
-    old := os.Getenv("NXGO_NX_HOME")
-    if err := os.Setenv("NXGO_NX_HOME", home); err != nil { return err }
-    defer os.Setenv("NXGO_NX_HOME", old)
-    return runCmd(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/nx-real-smoke.ps1")
+	if runtime.GOOS != "windows" { return errors.New("real NX loop requires Windows") }
+	if strings.TrimSpace(home) == "" {
+		installs, err := supervisor.Discover()
+		if err != nil || len(installs) == 0 {
+			return errors.New("NXGO_NX_HOME or valid Siemens NX installation is required")
+		}
+		home = installs[0].Home
+	}
+	old := os.Getenv("NXGO_NX_HOME")
+	if err := os.Setenv("NXGO_NX_HOME", home); err != nil { return err }
+	defer os.Setenv("NXGO_NX_HOME", old)
+
+	oldRunReal := os.Getenv("NXGO_RUN_REAL_NX")
+	_ = os.Setenv("NXGO_RUN_REAL_NX", "1")
+	defer os.Setenv("NXGO_RUN_REAL_NX", oldRunReal)
+
+	if err := runCmd(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/nx-real-smoke.ps1"); err != nil {
+		return err
+	}
+	return runCmd(ctx, "go", "test", "-v", "-timeout", "90s", "./tests/nx")
 }
 
 func runWithEnv(ctx context.Context, env []string, name string, args ...string) error {

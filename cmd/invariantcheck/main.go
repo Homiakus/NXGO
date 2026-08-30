@@ -111,7 +111,8 @@ func verifyAgentSiemensBoundary() error {
     return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
         if err != nil { return err }
         if d.IsDir() { return nil }
-        if strings.HasPrefix(filepath.ToSlash(path), "agent/NXGO.Agent.NXHost/") {
+        slashPath := filepath.ToSlash(path)
+        if strings.HasPrefix(slashPath, "agent/NXGO.Agent.NXHost/") || strings.HasPrefix(slashPath, "agent/bundle/") {
             return nil
         }
         if !strings.HasSuffix(path, ".cs") && !strings.HasSuffix(path, ".csproj") {

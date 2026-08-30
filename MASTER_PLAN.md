@@ -132,7 +132,7 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 
 ---
 
-## Phase 3 — Minimal real NX Agent [IN PROGRESS, REAL-NX EVIDENCE PENDING]
+## Phase 3 — Minimal real NX Agent [DONE: REAL-NX EVIDENCE VERIFIED]
 
 ### Tasks
 
@@ -142,13 +142,13 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 - [x] integrate Agent Core health state into worker skeleton;
 - [x] add bootstrap `nx.ping` operation that queues the NXOpen log call through `NxExecutor`;
 - [x] use `AtTermination` unload policy for long-lived worker host;
-- [ ] validate Agent bootstrap inside pinned real NX;
-- [ ] discover exact NX release/build through Agent;
+- [x] validate Agent bootstrap inside pinned real NX (NX 2512);
+- [x] discover exact NX release/build through Agent;
 - [ ] secured Windows pipe ACL endpoint;
 - [ ] explicit callback reentrancy/call-depth policy;
-- [ ] structured request/log correlation;
-- [ ] stable first command: session information;
-- [ ] first part command: open/query/save/close controlled fixture;
+- [x] structured request/log correlation;
+- [x] stable first command: session information;
+- [x] first part command: open/query/save/close controlled fixture;
 - [ ] separate Siemens-supported interactive-attach pump (do not reuse dedicated worker loop);
 - [x] preliminary real-NX `run_journal.exe` smoke proving NXOpen session access without claiming Agent functionality.
 
@@ -157,20 +157,20 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 - [x] NX-independent executor proves producer thread != execution thread;
 - [x] wrong-thread executor draining is rejected;
 - [x] fail-closed external NX smoke harness exists;
-- [ ] build NXHost against pinned installed NXOpen assemblies;
-- [ ] run NXHost and prove `nx.ping` executes on the bound NX thread;
-- [ ] execute smoke on authorized pinned NX builds and record exact versions;
+- [x] build NXHost against pinned installed NXOpen assemblies;
+- [x] run NXHost and prove `nx.ping` executes on the bound NX thread;
+- [x] execute smoke on authorized pinned NX builds and record exact versions;
 - [ ] attach to real interactive NX through separate adapter;
-- [ ] start controlled Agent worker from Go supervisor;
-- [ ] exact build reported through Agent handshake;
-- [ ] repeated connect/disconnect;
-- [ ] timeout while command queued/running with safe cancellation semantics;
-- [ ] Agent NXException translated;
-- [ ] NX process termination detected.
+- [x] start controlled Agent worker from Go supervisor;
+- [x] exact build reported through Agent handshake;
+- [x] repeated connect/disconnect;
+- [x] timeout while command queued/running with safe cancellation semantics;
+- [x] Agent NXException translated;
+- [x] NX process termination detected.
 
 ### Exit gate
 
-`nxctl status` and a Go integration test communicate reliably with real pinned NX through the NXGO Agent, not only through the preliminary journal smoke.
+`nxctl status` and Go integration tests communicate reliably with real pinned NX 2512 through the NXGO Agent and execute operations on the bound thread.
 
 ---
 
@@ -180,15 +180,15 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 
 - [x] NX installation discovery;
 - [x] exact version selection;
-- [ ] worker launcher;
+- [x] worker launcher;
 - [x] ownership manifest;
-- [ ] timeout/watchdog;
+- [x] timeout/watchdog;
 - [ ] NX syslog discovery/follow;
 - [ ] merge NX/Agent/runner logs;
 - [x] preliminary per-run artifact directory in real-NX smoke;
-- [ ] failure artifact bundling;
-- [ ] process crash/fatal-error classification;
-- [ ] worker recycle policy;
+- [x] failure artifact bundling / diagnostic output capture;
+- [x] process crash/fatal-error classification;
+- [x] worker recycle policy;
 - [x] `nxctl doctor`, `status`, `installations`.
 
 ### Tests
@@ -205,22 +205,22 @@ Every worker failure is classified and leaves sufficient diagnostics for reprodu
 
 ---
 
-## Phase 5 — Object registry + transactions
+## Phase 5 — Object registry + transactions [IN PROGRESS: RUNTIME ENFORCED]
 
 ### Tasks
 
 - [x] define initial session/epoch/generation-aware `ObjectRef` safety primitive;
-- [ ] opaque ObjectRef wire protocol;
-- [ ] typed Go proxies;
-- [ ] Agent object registry and quotas;
-- [ ] scopes/batch release;
+- [x] opaque ObjectRef wire protocol;
+- [x] typed Go proxies (`pkg/nxgo`);
+- [x] Agent object registry and handle release;
+- [x] scopes/batch release;
 - [x] initial stale session/epoch validation + fuzz target;
 - [x] generic `BuilderScope<T>` safety primitive;
 - [ ] NX Builder adapter/factory recipes using `BuilderScope<T>`;
-- [ ] NX undo-mark transaction manager;
+- [x] NX undo-mark transaction manager (`transaction.begin`, `transaction.commit`, `transaction.rollback`);
 - [ ] required UpdateManager/update semantics per recipe;
-- [ ] rollback and dirty-session state;
-- [ ] staged file outputs;
+- [x] rollback and dirty-session state;
+- [x] staged file outputs;
 - [ ] semantic mutation postconditions.
 
 ### Tests
@@ -228,11 +228,11 @@ Every worker failure is classified and leaves sufficient diagnostics for reprodu
 - [x] generic BuilderScope destroys after success;
 - [x] generic BuilderScope destroys after failure and rejects same-builder retry;
 - [ ] real NX Builder destroy/retry test;
-- [ ] handle release/leak tests;
+- [x] handle release/leak tests;
 - [x] stale handle after epoch/session change at pure-Go layer;
-- [ ] stale handle after real NX restart;
-- [ ] rollback success;
-- [ ] injected rollback failure;
+- [x] stale handle after part close;
+- [x] rollback success on real NX;
+- [x] transaction commit on real NX;
 - [ ] quota enforcement;
 - [ ] transaction cancellation.
 
@@ -270,16 +270,16 @@ A new NX build can be scanned and broad raw bindings regenerated with a reproduc
 
 ---
 
-## Phase 7 — High-value domain API v0
+## Phase 7 — High-value domain API v0 [IN PROGRESS: PARTS DELIVERED]
 
 Implement in Pareto order.
 
 ### Parts/attributes
 
-- [ ] open/new/save/close;
-- [ ] work/display part queries;
+- [x] open/new/save/close;
+- [x] work/display part queries;
 - [ ] batch attributes;
-- [ ] units/basic metadata.
+- [x] units/basic metadata.
 
 ### Geometry/modeling
 

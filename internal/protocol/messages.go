@@ -182,3 +182,100 @@ func DecodePayload[T any](data []byte) (*T, error) {
 	}
 	return &target, nil
 }
+
+// Transaction operation payloads (Phase 5)
+
+type TransactionBeginRequest struct {
+	Name string `json:"name,omitempty"`
+}
+
+type TransactionBeginResponse struct {
+	TxID   string `json:"tx_id"`
+	MarkID int    `json:"mark_id"`
+}
+
+type TransactionCommitRequest struct {
+	TxID string `json:"tx_id"`
+}
+
+type TransactionCommitResponse struct {
+	Committed bool   `json:"committed"`
+	TxID      string `json:"tx_id"`
+}
+
+type TransactionRollbackRequest struct {
+	TxID string `json:"tx_id"`
+}
+
+type TransactionRollbackResponse struct {
+	RolledBack bool   `json:"rolled_back"`
+	TxID       string `json:"tx_id"`
+}
+
+// Part operation payloads (Phase 7)
+
+type PartNewRequest struct {
+	Name  string `json:"name"`
+	Units string `json:"units,omitempty"` // "mm" (default) or "in"
+}
+
+type PartNewResponse struct {
+	PartRef ObjectHandleWire `json:"part_ref"`
+	Name    string           `json:"name"`
+	Units   string           `json:"units"`
+}
+
+type PartOpenRequest struct {
+	Path string `json:"path"`
+}
+
+type PartOpenResponse struct {
+	PartRef ObjectHandleWire `json:"part_ref"`
+	Name    string           `json:"name"`
+	Units   string           `json:"units"`
+}
+
+type PartSaveRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+	Path    string            `json:"path,omitempty"`
+}
+
+type PartSaveResponse struct {
+	Saved    bool   `json:"saved"`
+	Name     string `json:"name"`
+	FullPath string `json:"full_path,omitempty"`
+}
+
+type PartCloseRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+	Save    bool              `json:"save,omitempty"`
+}
+
+type PartCloseResponse struct {
+	Closed bool   `json:"closed"`
+	Name   string `json:"name"`
+}
+
+type PartSummaryRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type PartSummaryResponse struct {
+	Name           string `json:"name"`
+	Units          string `json:"units"`
+	BodyCount      int    `json:"body_count"`
+	FeatureCount   int    `json:"feature_count"`
+	ComponentCount int    `json:"component_count"`
+	NativeTag      uint32 `json:"native_tag,omitempty"`
+}
+
+// Object registry operation payloads (Phase 5)
+
+type ObjectReleaseRequest struct {
+	Handles []ObjectHandleWire `json:"handles"`
+}
+
+type ObjectReleaseResponse struct {
+	ReleasedCount int `json:"released_count"`
+}
+
