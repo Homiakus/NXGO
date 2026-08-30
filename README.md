@@ -45,6 +45,8 @@ The repository now contains executable quality gates and the first implementatio
 
 The Agent project deliberately separates the NX-independent core from release-specific NXOpen adapters so ordinary CI can test executor/lifetime/transport behavior without redistributing Siemens assemblies.
 
+See [`agent/README.md`](agent/README.md) for the .NET boundary implementation.
+
 ## Developer experience target
 
 ```go
@@ -141,7 +143,7 @@ NXGO does not attempt to replace NX or bypass Siemens licensing, expose unsafe a
 
 ## Status
 
-**Implementation started.** The architecture and testing contract are now backed by executable Go quality gates and an NX-independent .NET Agent core. The next milestones are wiring the Agent bootstrap to real NXOpen on authorized Windows/NX machines and adding the first typed Go↔Agent session-information call.
+**Implementation started.** The architecture and testing contract are backed by executable Go gates and the first NX-independent .NET Agent core. The next milestones are validating the NX worker host against a pinned Siemens NX installation and adding the first stable typed Go↔Agent request/response contract.
 
 See [`MASTER_PLAN.md`](MASTER_PLAN.md) for implementation sequence and gates.
 
