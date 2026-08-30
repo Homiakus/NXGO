@@ -30,11 +30,16 @@ func run(args []string) error {
         if err := runCmd(ctx, "go", "test", "-race", "./..."); err != nil { return err }
         if err := runWithEnv(ctx, []string{"CGO_ENABLED=0"}, "go", "test", "./..."); err != nil { return err }
         if err := runCmd(ctx, "go", "vet", "./..."); err != nil { return err }
-        return runCmd(ctx, "go", "run", "./cmd/invariantcheck")
+        if err := runCmd(ctx, "go", "run", "./cmd/invariantcheck"); err != nil { return err }
+        if _, err := exec.LookPath("dotnet"); err != nil {
+            return errors.New("dotnet SDK is required by the canonical fast gate because NXGO includes the NX-independent Agent core")
+        }
+        return runCmd(ctx, "dotnet", "test", "agent/NXGO.Agent.Core.Tests/NXGO.Agent.Core.Tests.csproj", "-c", "Release", "--nologo")
     case "fuzz":
         fuzzTime := strings.TrimSpace(os.Getenv("NXGO_FUZZTIME"))
         if fuzzTime == "" { fuzzTime = "30s" }
-        return runCmd(ctx, "go", "test", "./internal/objectref", "-run", "^$", "-fuzz", "FuzzReferenceNeverValidAcrossDifferentEpoch", "-fuzztime", fuzzTime)
+        if err := runCmd(ctx, "go", "test", "./internal/objectref", "-run", "^$", "-fuzz", "FuzzReferenceNeverValidAcrossDifferentEpoch", "-fuzztime", fuzzTime); err != nil { return err }
+        return runCmd(ctx, "go", "test", "./internal/protocol", "-run", "^$", "-fuzz", "FuzzDecodeFrame", "-fuzztime", fuzzTime)
     case "nx":
         return runRealNX(ctx, os.Getenv("NXGO_NX_HOME"))
     case "matrix":

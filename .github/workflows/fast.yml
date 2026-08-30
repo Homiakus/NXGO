@@ -18,6 +18,9 @@ jobs:
         with:
           go-version: '1.24.x'
           cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - name: Canonical fast loop
         run: go run ./cmd/nxctl test fast
       - name: Fake-Agent chaos contract

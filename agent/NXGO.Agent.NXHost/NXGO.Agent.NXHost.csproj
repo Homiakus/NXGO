@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>NXGO.Agent.NXHost</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NXGO.Agent.Core\NXGO.Agent.Core.csproj" />
+    <Reference Include="NXOpen">
+      <HintPath>$(NXGO_NX_MANAGED)\NXOpen.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="NXOpen.UF">
+      <HintPath>$(NXGO_NX_MANAGED)\NXOpen.UF.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="ValidateNxOpenPath" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(NXGO_NX_MANAGED)' == ''" Text="NXGO_NX_MANAGED must point to the installed NX managed/NXOpen assembly directory." />
+    <Error Condition="!Exists('$(NXGO_NX_MANAGED)\NXOpen.dll')" Text="NXOpen.dll not found under NXGO_NX_MANAGED=$(NXGO_NX_MANAGED)." />
+  </Target>
+</Project>

@@ -33,6 +33,12 @@ func main() {
         "docs/EXECUTABLE_QUALITY_GATES.md",
         "policy/invariant-compliance.json",
         "scripts/nx-real-smoke.ps1",
+        "scripts/build-agent.ps1",
+        "agent/NXGO.Agent.Core/NxExecutor.cs",
+        "agent/NXGO.Agent.Core/BuilderScope.cs",
+        "agent/NXGO.Agent.Core/NamedPipeRequestServer.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         ".github/workflows/fast.yml",
         ".github/workflows/nx-self-hosted.yml",
     }
@@ -49,7 +55,8 @@ func main() {
 
     if err := verifyCompliance(catalog); err != nil { fatalf("compliance map: %v", err) }
     if err := verifyPureGoBoundary(); err != nil { fatalf("pure-Go boundary: %v", err) }
-    fmt.Printf("invariantcheck: PASS (%d invariant IDs, compliance map valid, required artifacts present)\n", len(catalog))
+    if err := verifyAgentSiemensBoundary(); err != nil { fatalf("Agent Siemens boundary: %v", err) }
+    fmt.Printf("invariantcheck: PASS (%d invariant IDs, compliance map valid, Go/Agent dependency boundaries valid)\n", len(catalog))
 }
 
 func verifyCompliance(catalog map[string]struct{}) error {
@@ -97,6 +104,30 @@ func verifyPureGoBoundary() error {
         if err != nil { return err }
     }
     return nil
+}
+
+func verifyAgentSiemensBoundary() error {
+    root := "agent"
+    return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+        if err != nil { return err }
+        if d.IsDir() { return nil }
+        if strings.HasPrefix(filepath.ToSlash(path), "agent/NXGO.Agent.NXHost/") {
+            return nil
+        }
+        if !strings.HasSuffix(path, ".cs") && !strings.HasSuffix(path, ".csproj") {
+            return nil
+        }
+        b, err := os.ReadFile(path)
+        if err != nil { return err }
+        s := string(b)
+        forbidden := []string{"using NXOpen", "<Reference Include=\"NXOpen", "NXOpen.dll", "NXOpen.UF.dll"}
+        for _, marker := range forbidden {
+            if strings.Contains(s, marker) {
+                return fmt.Errorf("%s references Siemens NXOpen outside the approved NXHost boundary (%q)", path, marker)
+            }
+        }
+        return nil
+    })
 }
 
 func fatalf(format string, args ...any) {
