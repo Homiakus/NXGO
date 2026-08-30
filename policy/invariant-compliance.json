@@ -16,10 +16,21 @@
       "mechanisms": [
         "internal/sessionhealth/state.go",
         "internal/sessionhealth/state_test.go",
+        "internal/protocol/messages.go",
+        "internal/protocol/messages_test.go",
         "agent/NXGO.Agent.Core/SessionHealth.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
       ],
-      "note": "Go and Agent-core state machines refuse reuse of non-healthy sessions. Real NX fatal/modeler classification and supervisor kill/restart evidence are still pending."
+      "note": "Go and Agent-core state machines refuse reuse of non-healthy sessions; protocol ErrorEnvelope enforces healthy/dirty/lost taxonomy. Real NX fatal/modeler classification and supervisor kill/restart evidence are still pending."
+    },
+    {
+      "id": "NXGO-INV-SES-002",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/protocol/messages.go",
+        "internal/protocol/messages_test.go"
+      ],
+      "note": "Protocol ErrorEnvelope explicitly categorizes errors (InvalidArgument, NXException, SessionDirty, SessionLost, Timeout, Cancelled, Internal) with recoverability and session health."
     },
     {
       "id": "NXGO-INV-EXEC-001",
@@ -60,6 +71,17 @@
       "note": "CommitOnce rejects a second commit attempt on the same BuilderScope. Real NX recipes and retry factory logic are pending."
     },
     {
+      "id": "NXGO-INV-IPC-001",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/protocol/messages.go",
+        "internal/protocol/messages_test.go",
+        "agent/NXGO.Agent.Core/NxExecutor.cs",
+        "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
+      ],
+      "note": "Protocol defines structured timeout/cancellation envelopes and Agent Core provides safe queue cancellation without thread abort."
+    },
+    {
       "id": "NXGO-INV-IPC-002",
       "status": "enforced",
       "mechanisms": [
@@ -81,9 +103,11 @@
       "status": "partially_enforced",
       "mechanisms": [
         "internal/fakeagent/fakeagent.go",
-        "internal/fakeagent/fakeagent_test.go"
+        "internal/fakeagent/fakeagent_test.go",
+        "internal/protocol/messages.go",
+        "internal/protocol/messages_test.go"
       ],
-      "note": "Request-ID idempotency contract exists in Fake Agent; production Agent store is pending."
+      "note": "Request-ID idempotency contract and mandatory envelope validation exist; production Agent store is pending."
     },
     {
       "id": "NXGO-INV-TEST-003",

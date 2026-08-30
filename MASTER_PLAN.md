@@ -63,7 +63,7 @@ No production implementation begins by adding ad-hoc cgo bindings or exposing Si
 
 - [x] create Go module and initial package layout;
 - [x] create NX-independent .NET Agent core with NXHost/release boundary;
-- [ ] create stable typed/protobuf protocol schema project;
+- [x] create stable typed protocol messages and validation schemas;
 - [x] create initial `nxctl` command and test-loop surface;
 - [x] add formatting/linting/unit/race CI that does not require NX;
 - [x] add .NET Agent Core CI that does not require NX;
@@ -85,6 +85,7 @@ No production implementation begins by adding ad-hoc cgo bindings or exposing Si
 - [x] .NET Agent Core unit/contract smoke;
 - [x] local named-pipe transport round trip without NX;
 - [x] cross-language Go/C# framing golden;
+- [x] protocol message serialization and validation tests;
 - [ ] protobuf/codegen reproducibility.
 
 ### Exit gate
@@ -97,12 +98,12 @@ Fresh checkout builds/tests all non-NX components deterministically; NXHost addi
 
 ### Tasks
 
-- [ ] handshake messages;
-- [ ] protocol version negotiation;
-- [ ] capabilities;
-- [ ] stable request/response envelope;
-- [ ] stable error envelope;
-- [ ] log/event stream;
+- [x] handshake messages;
+- [x] protocol version negotiation;
+- [x] capabilities;
+- [x] stable request/response envelope;
+- [x] stable error envelope;
+- [x] log/event stream;
 - [x] cancellation semantics for queued executor work at core level;
 - [x] bounded length-prefixed bootstrap framing;
 - [x] named-pipe server transport primitive;
@@ -112,7 +113,7 @@ Fresh checkout builds/tests all non-NX components deterministically; NXHost addi
 
 ### Tests
 
-- [ ] protocol backward/forward minor compatibility;
+- [x] protocol backward/forward minor compatibility;
 - [x] bootstrap frame malformed/length mismatch tests;
 - [x] bootstrap frame fuzz target;
 - [x] local named-pipe roundtrip in Agent Core suite;
