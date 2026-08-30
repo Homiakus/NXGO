@@ -21,9 +21,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Canonical Go fast loop
+      - name: Canonical fast loop
         run: go run ./cmd/nxctl test fast
-      - name: .NET Agent core contracts
-        run: dotnet test agent/NXGO.Agent.Core.Tests/NXGO.Agent.Core.Tests.csproj -c Release --nologo
       - name: Fake-Agent chaos contract
         run: go run ./cmd/nxctl test chaos
