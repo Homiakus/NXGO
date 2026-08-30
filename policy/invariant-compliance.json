@@ -181,9 +181,13 @@
     },
     {
       "id": "NXGO-INV-COR-001",
-      "status": "planned",
-      "mechanisms": [],
-      "note": "Requires real CAD semantic fixtures and postcondition validators."
+      "status": "enforced",
+      "mechanisms": [
+        "pkg/nxgo/geometry.go",
+        "agent/bundle/AgentWorker.cs",
+        "tests/nx/geometry_test.go"
+      ],
+      "note": "Semantic CAD postconditions (analytical volume, surface area, bounding box geometry, centroid coordinates, and undo mark body count restoration) validated on real Siemens NX 2512."
     }
   ]
 }

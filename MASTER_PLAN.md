@@ -270,7 +270,7 @@ A new NX build can be scanned and broad raw bindings regenerated with a reproduc
 
 ---
 
-## Phase 7 — High-value domain API v0 [IN PROGRESS: PARTS DELIVERED]
+## Phase 7 — High-value domain API v0 [IN PROGRESS: PARTS + GEOMETRY DELIVERED]
 
 Implement in Pareto order.
 
@@ -283,9 +283,9 @@ Implement in Pareto order.
 
 ### Geometry/modeling
 
-- [ ] bodies/faces/edges summaries;
-- [ ] bounding box/mass properties;
-- [ ] selected simple feature creation;
+- [x] bodies/faces/edges summaries;
+- [x] bounding box/mass properties;
+- [x] selected simple feature creation (block, cylinder);
 - [ ] semantic hole operation;
 - [ ] bulk analysis request.
 

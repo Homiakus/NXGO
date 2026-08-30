@@ -762,6 +762,186 @@ public class Program
                         return FormatResponse(reqId, respJson);
                     }
 
+                    // Feature & Geometry operations (Phase 7)
+                    if (op == "feature.create_block")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        double[] origin = ExtractJsonDoubleArray3(payloadRaw, "origin");
+                        double length = ExtractJsonDouble(payloadRaw, "length", 100.0);
+                        double width = ExtractJsonDouble(payloadRaw, "width", 100.0);
+                        double height = ExtractJsonDouble(payloadRaw, "height", 100.0);
+
+                        using (var scope = new BuilderScope<NXOpen.Features.BlockFeatureBuilder>(
+                            part.Features.CreateBlockFeatureBuilder(null),
+                            delegate(NXOpen.Features.BlockFeatureBuilder b) { try { b.Destroy(); } catch {} }))
+                        {
+                            var b = scope.Builder;
+                            b.Type = NXOpen.Features.BlockFeatureBuilder.Types.OriginAndEdgeLengths;
+                            b.SetOriginAndLengths(
+                                new Point3d(origin[0], origin[1], origin[2]),
+                                length.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+                                width.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+                                height.ToString("G", System.Globalization.CultureInfo.InvariantCulture)
+                            );
+                            b.BooleanOption.Type = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Create;
+
+                            NXOpen.Features.BodyFeature feat = scope.CommitOnce(delegate(NXOpen.Features.BlockFeatureBuilder builder)
+                            {
+                                return (NXOpen.Features.BodyFeature)builder.CommitFeature();
+                            });
+
+                            Body[] bodies = feat.GetBodies();
+                            Body body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
+
+                            uint featNativeTag, bodyNativeTag = 0;
+                            string featObjId = Registry.Register(feat, "Feature", "", out featNativeTag);
+                            string featHandleJson = Registry.FormatHandleJson(featObjId, "Feature", featNativeTag, "");
+
+                            string bodyHandleJson = "{}";
+                            if (body != null)
+                            {
+                                string bodyObjId = Registry.Register(body, "Body", "", out bodyNativeTag);
+                                bodyHandleJson = Registry.FormatHandleJson(bodyObjId, "Body", bodyNativeTag, "");
+                            }
+
+                            var respJson = string.Format(
+                                "{{\"feature_ref\":{0},\"body_ref\":{1},\"feature_name\":\"{2}\",\"feature_type\":\"{3}\"}}",
+                                featHandleJson,
+                                bodyHandleJson,
+                                feat.GetFeatureName(),
+                                feat.FeatureType
+                            );
+                            return FormatResponse(reqId, respJson);
+                        }
+                    }
+
+                    if (op == "feature.create_cylinder")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        double[] origin = ExtractJsonDoubleArray3(payloadRaw, "origin");
+                        double[] dir = ExtractJsonDoubleArray3(payloadRaw, "direction");
+                        if (dir[0] == 0 && dir[1] == 0 && dir[2] == 0) { dir[2] = 1.0; }
+                        double diameter = ExtractJsonDouble(payloadRaw, "diameter", 50.0);
+                        double height = ExtractJsonDouble(payloadRaw, "height", 100.0);
+
+                        using (var scope = new BuilderScope<NXOpen.Features.CylinderBuilder>(
+                            part.Features.CreateCylinderBuilder(null),
+                            delegate(NXOpen.Features.CylinderBuilder b) { try { b.Destroy(); } catch {} }))
+                        {
+                            var b = scope.Builder;
+                            b.Type = NXOpen.Features.CylinderBuilder.Types.AxisDiameterAndHeight;
+                            b.Diameter.RightHandSide = diameter.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+                            b.Height.RightHandSide = height.ToString("G", System.Globalization.CultureInfo.InvariantCulture);
+                            b.Origin = new Point3d(origin[0], origin[1], origin[2]);
+                            b.Direction = new Vector3d(dir[0], dir[1], dir[2]);
+                            b.BooleanOption.Type = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Create;
+
+                            NXOpen.Features.BodyFeature feat = scope.CommitOnce(delegate(NXOpen.Features.CylinderBuilder builder)
+                            {
+                                return (NXOpen.Features.BodyFeature)builder.CommitFeature();
+                            });
+
+                            Body[] bodies = feat.GetBodies();
+                            Body body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
+
+                            uint featNativeTag, bodyNativeTag = 0;
+                            string featObjId = Registry.Register(feat, "Feature", "", out featNativeTag);
+                            string featHandleJson = Registry.FormatHandleJson(featObjId, "Feature", featNativeTag, "");
+
+                            string bodyHandleJson = "{}";
+                            if (body != null)
+                            {
+                                string bodyObjId = Registry.Register(body, "Body", "", out bodyNativeTag);
+                                bodyHandleJson = Registry.FormatHandleJson(bodyObjId, "Body", bodyNativeTag, "");
+                            }
+
+                            var respJson = string.Format(
+                                "{{\"feature_ref\":{0},\"body_ref\":{1},\"feature_name\":\"{2}\"}}",
+                                featHandleJson,
+                                bodyHandleJson,
+                                feat.GetFeatureName()
+                            );
+                            return FormatResponse(reqId, respJson);
+                        }
+                    }
+
+                    if (op == "geometry.query_mass_properties")
+                    {
+                        Body body = ResolveBodyFromPayload(session, payloadRaw);
+                        var uf = NXOpen.UF.UFSession.GetUFSession();
+                        var bodyTags = new NXOpen.Tag[] { body.Tag };
+                        double density = 1.0;
+                        int units = 3; // 3 = Standard metric units in UF_MODL
+                        int mode = 1;  // 1 = solid body
+                        int accuracy = 1; // 1 = standard accuracy
+                        double[] accValues = new double[11];
+                        double[] massProps = new double[47];
+                        double[] statistics = new double[13];
+                        uf.Modl.AskMassProps3d(bodyTags, 1, mode, units, density, accuracy, accValues, massProps, statistics);
+
+                        double area = massProps[0] / 10000.0;
+                        double vol = massProps[1] / 1000000.0;
+                        double mass = massProps[2] / 1000000.0;
+                        double centX = massProps[3] / 100.0;
+                        double centY = massProps[4] / 100.0;
+                        double centZ = massProps[5] / 100.0;
+
+                        var respJson = string.Format(
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            "{{\"volume\":{0:F6},\"area\":{1:F6},\"mass\":{2:F6},\"centroid\":[{3:F6},{4:F6},{5:F6}],\"solid_type\":\"solid\"}}",
+                            vol, area, mass, centX, centY, centZ
+                        );
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "geometry.query_bounding_box")
+                    {
+                        Body body = ResolveBodyFromPayload(session, payloadRaw);
+                        var uf = NXOpen.UF.UFSession.GetUFSession();
+                        double[] minMax = new double[6];
+                        uf.Modl.AskBoundingBox(body.Tag, minMax);
+
+                        double minX = minMax[0] / 1000.0, minY = minMax[1] / 1000.0, minZ = minMax[2] / 1000.0;
+                        double maxX = minMax[3] / 1000.0, maxY = minMax[4] / 1000.0, maxZ = minMax[5] / 1000.0;
+                        double dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
+
+                        var respJson = string.Format(
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            "{{\"min_corner\":[{0:F6},{1:F6},{2:F6}],\"max_corner\":[{3:F6},{4:F6},{5:F6}],\"dimensions\":[{6:F6},{7:F6},{8:F6}]}}",
+                            minX, minY, minZ, maxX, maxY, maxZ, dx, dy, dz
+                        );
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "part.query_bodies")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        var bodyList = new List<string>();
+                        foreach (Body b in part.Bodies)
+                        {
+                            uint bTag = 0;
+                            string bId = Registry.Register(b, "Body", "", out bTag);
+                            string bHandleJson = Registry.FormatHandleJson(bId, "Body", bTag, "");
+                            int fCount = 0;
+                            foreach (Face f in b.GetFaces()) fCount++;
+                            int eCount = 0;
+                            foreach (Edge e in b.GetEdges()) eCount++;
+
+                            bodyList.Add(string.Format(
+                                "{{\"body_ref\":{0},\"name\":\"{1}\",\"solid_type\":\"{2}\",\"face_count\":{3},\"edge_count\":{4},\"native_tag\":{5}}}",
+                                bHandleJson,
+                                b.Name,
+                                b.IsSolidBody ? "solid" : "sheet",
+                                fCount,
+                                eCount,
+                                bTag
+                            ));
+                        }
+
+                        var respJson = string.Format("{{\"bodies\":[{0}]}}", string.Join(",", bodyList.ToArray()));
+                        return FormatResponse(reqId, respJson);
+                    }
+
                     // Unknown op
                     return FormatError(reqId, "INVALID_ARGUMENT", "unsupported operation: " + op, 0, Health.Value.ToString().ToLowerInvariant(), true);
                 }, 30000);
@@ -802,6 +982,72 @@ public class Program
         if (session.Parts.Work != null) return session.Parts.Work;
         if (session.Parts.Display != null) return session.Parts.Display;
         throw new InvalidOperationException("no active work or display part in session");
+    }
+
+    private static Body ResolveBodyFromPayload(Session session, string payloadJson)
+    {
+        string objId = ExtractJsonString(payloadJson, "object_id");
+        if (!string.IsNullOrEmpty(objId))
+        {
+            ulong epoch = ExtractJsonUlong(payloadJson, "epoch", Registry.Epoch);
+            string sessId = ExtractJsonString(payloadJson, "session_id");
+            if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
+            try { return Registry.Resolve<Body>(objId, epoch, sessId); } catch {}
+        }
+        string bodyRefJson = ExtractJsonObjectOrSection(payloadJson, "body_ref");
+        if (!string.IsNullOrEmpty(bodyRefJson) && bodyRefJson.StartsWith("{"))
+        {
+            string subObjId = ExtractJsonString(bodyRefJson, "object_id");
+            if (!string.IsNullOrEmpty(subObjId))
+            {
+                ulong epoch = ExtractJsonUlong(bodyRefJson, "epoch", Registry.Epoch);
+                string sessId = ExtractJsonString(bodyRefJson, "session_id");
+                if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
+                return Registry.Resolve<Body>(subObjId, epoch, sessId);
+            }
+        }
+        Part part = ResolvePartFromPayload(session, payloadJson);
+        foreach (Body b in part.Bodies) return b;
+        throw new InvalidOperationException("no bodies found in part");
+    }
+
+    private static double ExtractJsonDouble(string json, string key, double defaultVal)
+    {
+        if (string.IsNullOrEmpty(json)) return defaultVal;
+        var search = "\"" + key + "\":";
+        var idx = json.IndexOf(search, StringComparison.Ordinal);
+        if (idx < 0) return defaultVal;
+        var start = idx + search.Length;
+        while (start < json.Length && char.IsWhiteSpace(json[start])) start++;
+        var end = start;
+        while (end < json.Length && (char.IsDigit(json[end]) || json[end] == '.' || json[end] == '-' || json[end] == 'e' || json[end] == 'E' || json[end] == '+')) end++;
+        if (end <= start) return defaultVal;
+        double val;
+        return double.TryParse(json.Substring(start, end - start), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out val) ? val : defaultVal;
+    }
+
+    private static double[] ExtractJsonDoubleArray3(string json, string key)
+    {
+        var res = new double[] { 0, 0, 0 };
+        if (string.IsNullOrEmpty(json)) return res;
+        var search = "\"" + key + "\":";
+        var idx = json.IndexOf(search, StringComparison.Ordinal);
+        if (idx < 0) return res;
+        var start = json.IndexOf("[", idx, StringComparison.Ordinal);
+        if (start < 0) return res;
+        var end = json.IndexOf("]", start, StringComparison.Ordinal);
+        if (end < 0) return res;
+        var inner = json.Substring(start + 1, end - start - 1);
+        var parts = inner.Split(',');
+        for (int i = 0; i < parts.Length && i < 3; i++)
+        {
+            double val;
+            if (double.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out val))
+            {
+                res[i] = val;
+            }
+        }
+        return res;
     }
 
     private static byte[] FormatResponse(string reqId, string payloadJson)

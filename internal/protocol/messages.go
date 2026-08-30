@@ -279,3 +279,80 @@ type ObjectReleaseResponse struct {
 	ReleasedCount int `json:"released_count"`
 }
 
+// Geometry & Feature creation payloads (Phase 7)
+
+type FeatureCreateBlockRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	Origin        [3]float64        `json:"origin"`
+	Length        float64           `json:"length"`
+	Width         float64           `json:"width"`
+	Height        float64           `json:"height"`
+	BooleanOp     string            `json:"boolean_op,omitempty"` // "create", "unite", "subtract", "intersect"
+	TargetBodyRef *ObjectHandleWire `json:"target_body_ref,omitempty"`
+}
+
+type FeatureCreateBlockResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
+
+type FeatureCreateCylinderRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	Origin        [3]float64        `json:"origin"`
+	Direction     [3]float64        `json:"direction,omitempty"` // default [0, 0, 1]
+	Diameter      float64           `json:"diameter"`
+	Height        float64           `json:"height"`
+	BooleanOp     string            `json:"boolean_op,omitempty"`
+	TargetBodyRef *ObjectHandleWire `json:"target_body_ref,omitempty"`
+}
+
+type FeatureCreateCylinderResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref"`
+	FeatureName string           `json:"feature_name"`
+}
+
+type GeometryQueryMassPropertiesRequest struct {
+	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type GeometryQueryMassPropertiesResponse struct {
+	Volume    float64    `json:"volume"`
+	Area      float64    `json:"area"`
+	Mass      float64    `json:"mass"`
+	Centroid  [3]float64 `json:"centroid"`
+	SolidType string     `json:"solid_type"`
+}
+
+type GeometryQueryBoundingBoxRequest struct {
+	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type GeometryQueryBoundingBoxResponse struct {
+	MinCorner  [3]float64 `json:"min_corner"`
+	MaxCorner  [3]float64 `json:"max_corner"`
+	Dimensions [3]float64 `json:"dimensions"`
+}
+
+type PartQueryBodiesRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type BodyInfoWire struct {
+	BodyRef   ObjectHandleWire `json:"body_ref"`
+	Name      string           `json:"name"`
+	SolidType string           `json:"solid_type"`
+	FaceCount int              `json:"face_count"`
+	EdgeCount int              `json:"edge_count"`
+	NativeTag uint32           `json:"native_tag,omitempty"`
+}
+
+type PartQueryBodiesResponse struct {
+	Bodies []BodyInfoWire `json:"bodies"`
+}
+
+
