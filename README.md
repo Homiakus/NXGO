@@ -30,6 +30,21 @@ Siemens NX / Designcenter
 
 Default local transport is a Windows named pipe. The SDK itself must remain free of Siemens binaries and should build with `CGO_ENABLED=0`.
 
+## Current implementation status
+
+The repository now contains executable quality gates and the first implementation slice for the NX integration boundary:
+
+- Pure-Go safety/session primitives;
+- `nxctl` test-loop commands;
+- invariant enforcement and fuzz/state-machine tests;
+- Fake Agent failure contracts;
+- fail-closed real-NX smoke runner;
+- .NET NXGO.Agent core skeleton with `NxExecutor`, `BuilderScope<T>` and named-pipe request loop;
+- contract tests for Agent primitives that do **not** require Siemens NX binaries;
+- self-hosted Windows hooks for real NX integration.
+
+The Agent project deliberately separates the NX-independent core from release-specific NXOpen adapters so ordinary CI can test executor/lifetime/transport behavior without redistributing Siemens assemblies.
+
 ## Developer experience target
 
 ```go
@@ -92,10 +107,9 @@ NXGO treats programming rules and testing rules as one engineering contract. Sta
 - [`docs/RULES_QUICK_REFERENCE.md`](docs/RULES_QUICK_REFERENCE.md) — daily MUST/MUST NOT checklist;
 - [`docs/ENGINEERING_STANDARD.md`](docs/ENGINEERING_STANDARD.md) — normative programming/design standard;
 - [`docs/TESTING_PLAYBOOK.md`](docs/TESTING_PLAYBOOK.md) — fast tests, fake Agent, warm NX, isolated NX, matrix, fuzz, mutation, metamorphic, differential, chaos, soak and performance testing;
-- [`docs/EXECUTABLE_QUALITY_GATES.md`](docs/EXECUTABLE_QUALITY_GATES.md) — executable enforcement already present in the repository;
 - [`docs/DEFINITION_OF_DONE.md`](docs/DEFINITION_OF_DONE.md) — merge/release completion gate;
 - [`docs/invariants/README.md`](docs/invariants/README.md) — stable safety invariants derived from real NX/NXOpen failure modes;
-- [`policy/invariant-compliance.json`](policy/invariant-compliance.json) — machine-readable enforcement status.
+- [`docs/EXECUTABLE_QUALITY_GATES.md`](docs/EXECUTABLE_QUALITY_GATES.md) — what is currently enforced by code/CI.
 
 For NX-dependent behavior, mock-only confidence is insufficient. The target development loop is:
 
@@ -111,41 +125,9 @@ edit
 
 Crash/poison/startup/recovery cases use isolated NX processes, while supported-version claims require the NX compatibility matrix.
 
-## Executable test loops
-
-The repository now contains an initial runnable quality-gate implementation:
-
-```text
-go run ./cmd/nxctl test fast
-go run ./cmd/nxctl test nx
-go run ./cmd/nxctl test matrix
-go run ./cmd/nxctl test chaos
-go run ./cmd/nxctl test soak
-go run ./cmd/nxctl test perf
-```
-
-`fast` runs race-enabled Go tests, `go vet` and the invariant policy checker. The real-NX loop uses `scripts/nx-real-smoke.ps1` and `tests/nx/smoke.py`; it deliberately fails unless it executes through a real Siemens `run_journal.exe` on Windows with `NXGO_NX_HOME` configured.
-
-GitHub Actions contains a public fast-loop workflow and a separate self-hosted Windows real-NX workflow. Fake-Agent tests are explicitly labeled simulation and are not accepted as evidence of NX kernel/runtime compatibility.
-
 ## Repository documentation
 
-The design package lives in [`docs/`](docs/README.md) and covers:
-
-- architecture and ADRs;
-- engineering/programming rules and invariants;
-- Go SDK/API specification;
-- bridge and protocol contracts;
-- object-handle and transaction model;
-- versioning and capability negotiation;
-- observability and continuous NX log collection;
-- testing architecture and NX-in-the-loop playbook;
-- executable quality gates and compliance status;
-- security model;
-- CLI (`nxctl`) specification;
-- API scanner/code generation design;
-- product requirements, quality attributes and roadmap;
-- living `MASTER_PLAN.md` for implementation.
+The design package lives in [`docs/`](docs/README.md) and covers architecture, engineering rules, Go SDK/API contracts, Agent/protocol, object lifetime, versioning, observability, testing, security, code generation and the living implementation plan.
 
 ## Initial supported environment
 
@@ -155,20 +137,13 @@ Siemens documents NX Open as an extensibility platform using languages such as C
 
 ## Non-goals
 
-NXGO does not attempt to:
-
-- replace NX or bypass Siemens licensing;
-- guarantee that every private/internal NX UI action has a supported automation API;
-- expose unsafe arbitrary remote command execution by default;
-- make NXOpen thread-safe;
-- serialize live Siemens/.NET objects across process boundaries;
-- promise deterministic parallel mutation of one NX session.
+NXGO does not attempt to replace NX or bypass Siemens licensing, expose unsafe arbitrary remote command execution by default, make NXOpen thread-safe, serialize live Siemens/.NET objects across process boundaries, or promise deterministic parallel mutation of one NX session.
 
 ## Status
 
-**Implementation bootstrap in progress.** Architecture and engineering standards are established; the repository now has a compiling Go test/control skeleton, executable invariant gates, Fake-Agent recovery contracts and a fail-closed real-NX smoke path. The production .NET NX Agent, warm-worker orchestration and semantic CAD fixture suite remain planned in `MASTER_PLAN.md`.
+**Implementation started.** The architecture and testing contract are now backed by executable Go quality gates and an NX-independent .NET Agent core. The next milestones are wiring the Agent bootstrap to real NXOpen on authorized Windows/NX machines and adding the first typed Go↔Agent session-information call.
 
-See [`MASTER_PLAN.md`](MASTER_PLAN.md) for the implementation sequence and quality gates.
+See [`MASTER_PLAN.md`](MASTER_PLAN.md) for implementation sequence and gates.
 
 ## Trademark notice
 
