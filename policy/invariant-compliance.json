@@ -185,11 +185,13 @@
       "mechanisms": [
         "pkg/nxgo/geometry.go",
         "pkg/nxgo/assembly.go",
+        "pkg/nxgo/drafting.go",
         "agent/bundle/AgentWorker.cs",
         "tests/nx/geometry_test.go",
-        "tests/nx/assembly_test.go"
+        "tests/nx/assembly_test.go",
+        "tests/nx/drafting_test.go"
       ],
-      "note": "Semantic CAD postconditions (analytical volume, surface area, bounding box geometry, centroid coordinates, assembly tree hierarchy, and BOM quantities) validated on real Siemens NX 2512."
+      "note": "Semantic CAD postconditions (analytical volume, surface area, bounding box geometry, centroid coordinates, assembly tree hierarchy, BOM quantities, and valid PDF export artifacts) validated on real Siemens NX 2512."
     }
   ]
 }

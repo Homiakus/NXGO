@@ -414,5 +414,56 @@ type AssemblyRemoveComponentResponse struct {
 	Removed bool `json:"removed"`
 }
 
+// Drafting & PDF Export operation payloads (Phase 8)
+
+type DraftingCreateSheetRequest struct {
+	PartRef          *ObjectHandleWire `json:"part_ref,omitempty"`
+	SheetName        string            `json:"sheet_name"`
+	Units            string            `json:"units,omitempty"` // "mm", "inch"
+	Height           float64           `json:"height"`
+	Length           float64           `json:"length"`
+	ScaleNumerator   float64           `json:"scale_numerator,omitempty"`
+	ScaleDenominator float64           `json:"scale_denominator,omitempty"`
+}
+
+type DraftingCreateSheetResponse struct {
+	SheetRef  ObjectHandleWire `json:"sheet_ref"`
+	SheetName string           `json:"sheet_name"`
+	Height    float64          `json:"height"`
+	Length    float64          `json:"length"`
+	NativeTag uint32           `json:"native_tag,omitempty"`
+}
+
+type DraftingExportPDFRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	OutputPDFPath string            `json:"output_pdf_path"`
+	SheetNames    []string          `json:"sheet_names,omitempty"`
+	ColorMode     string            `json:"color_mode,omitempty"`
+}
+
+type DraftingExportPDFResponse struct {
+	ExportedPath  string `json:"exported_path"`
+	FileSizeBytes int64  `json:"file_size_bytes"`
+}
+
+type DraftingQuerySheetsRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type DraftingSheetInfoWire struct {
+	SheetRef    ObjectHandleWire `json:"sheet_ref"`
+	Name        string           `json:"name"`
+	Height      float64          `json:"height"`
+	Length      float64          `json:"length"`
+	Numerator   float64          `json:"numerator"`
+	Denominator float64          `json:"denominator"`
+	NativeTag   uint32           `json:"native_tag,omitempty"`
+}
+
+type DraftingQuerySheetsResponse struct {
+	Sheets []DraftingSheetInfoWire `json:"sheets"`
+}
+
+
 
 

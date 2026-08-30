@@ -303,11 +303,11 @@ Implement in Pareto order.
 
 ---
 
-## Phase 8 — Drafting/PMI automation v0
+## Phase 8 — Drafting/PMI automation v0 [IN PROGRESS: SHEETS + PDF EXPORT DELIVERED]
 
 ### Tasks
 
-- [ ] drawing sheet abstraction;
+- [x] drawing sheet abstraction;
 - [ ] base/projected/isometric/section views;
 - [ ] automatic view-layout strategy interface;
 - [ ] PMI retrieval/association;
@@ -315,7 +315,7 @@ Implement in Pareto order.
 - [ ] hole callouts;
 - [ ] title block attribute mapping;
 - [ ] parts list/balloons for assemblies;
-- [ ] PDF/DXF export;
+- [x] PDF/DXF export;
 - [ ] drawing validation report;
 - [ ] initial ESKD-oriented policy layer without hardcoding organization-specific standards into core.
 

@@ -1046,9 +1046,131 @@ public class Program
                         return FormatResponse(reqId, "{\"removed\":true}");
                     }
 
+                    // Drafting & Export operations (Phase 8)
+                    if (op == "drafting.create_sheet")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        string sheetName = ExtractJsonString(payloadRaw, "sheet_name");
+                        if (string.IsNullOrEmpty(sheetName)) sheetName = "Sheet_1";
+                        double height = ExtractJsonDouble(payloadRaw, "height", 297.0); // A3 default height mm
+                        double length = ExtractJsonDouble(payloadRaw, "length", 420.0); // A3 default length mm
+                        double num = ExtractJsonDouble(payloadRaw, "scale_numerator", 1.0);
+                        double den = ExtractJsonDouble(payloadRaw, "scale_denominator", 1.0);
+                        string units = ExtractJsonString(payloadRaw, "units");
+
+                        var sheetUnit = units == "inch" ? NXOpen.Drawings.DrawingSheet.Unit.Inches : NXOpen.Drawings.DrawingSheet.Unit.Millimeters;
+
+                        NXOpen.Drawings.DrawingSheet sheet = part.DrawingSheets.InsertSheet(
+                            sheetName,
+                            sheetUnit,
+                            height,
+                            length,
+                            num,
+                            den,
+                            NXOpen.Drawings.DrawingSheet.ProjectionAngleType.FirstAngle
+                        );
+
+                        uint tag = 0;
+                        string objId = Registry.Register(sheet, "DrawingSheet", "", out tag);
+                        string handleJson = Registry.FormatHandleJson(objId, "DrawingSheet", tag, "");
+
+                        var respJson = string.Format(
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            "{{\"sheet_ref\":{0},\"sheet_name\":\"{1}\",\"height\":{2:F2},\"length\":{3:F2},\"native_tag\":{4}}}",
+                            handleJson,
+                            sheet.Name,
+                            height,
+                            length,
+                            tag
+                        );
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "drafting.export_pdf")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        string pdfPath = ExtractJsonString(payloadRaw, "output_pdf_path");
+                        if (string.IsNullOrEmpty(pdfPath))
+                        {
+                            throw new ArgumentException("missing output_pdf_path");
+                        }
+                        string colorMode = ExtractJsonString(payloadRaw, "color_mode");
+
+                        using (var scope = new BuilderScope<NXOpen.PrintPDFBuilder>(
+                            part.PlotManager.CreatePrintPdfbuilder(),
+                            delegate(NXOpen.PrintPDFBuilder b) { try { b.Destroy(); } catch {} }))
+                        {
+                            var b = scope.Builder;
+                            b.Action = NXOpen.PrintPDFBuilder.ActionOption.Native;
+                            b.Filename = pdfPath;
+                            b.Colors = NXOpen.PrintPDFBuilder.Color.BlackOnWhite;
+
+                            var sheetList = new List<NXOpen.NXObject>();
+                            foreach (NXOpen.Drawings.DrawingSheet s in part.DrawingSheets)
+                            {
+                                sheetList.Add(s);
+                            }
+                            if (sheetList.Count > 0)
+                            {
+                                b.SourceBuilder.SetSheets(sheetList.ToArray());
+                            }
+
+                            scope.CommitOnce(delegate(NXOpen.PrintPDFBuilder builder)
+                            {
+                                return builder.Commit();
+                            });
+                        }
+
+                        long fileSizeBytes = 0;
+                        try
+                        {
+                            if (File.Exists(pdfPath))
+                            {
+                                fileSizeBytes = new FileInfo(pdfPath).Length;
+                            }
+                        }
+                        catch {}
+
+                        var respJson = string.Format(
+                            "{{\"exported_path\":\"{0}\",\"file_size_bytes\":{1}}}",
+                            pdfPath.Replace('\\', '/'),
+                            fileSizeBytes
+                        );
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "drafting.query_sheets")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        var list = new List<string>();
+                        foreach (NXOpen.Drawings.DrawingSheet s in part.DrawingSheets)
+                        {
+                            uint tag = 0;
+                            string objId = Registry.Register(s, "DrawingSheet", "", out tag);
+                            string handleJson = Registry.FormatHandleJson(objId, "DrawingSheet", tag, "");
+                            double sNum = 1.0, sDen = 1.0;
+                            try { s.GetScale(out sNum, out sDen); } catch {}
+
+                            list.Add(string.Format(
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                "{{\"sheet_ref\":{0},\"name\":\"{1}\",\"height\":{2:F2},\"length\":{3:F2},\"numerator\":{4:F2},\"denominator\":{5:F2},\"native_tag\":{6}}}",
+                                handleJson,
+                                s.Name,
+                                s.Height,
+                                s.Length,
+                                sNum,
+                                sDen,
+                                tag
+                            ));
+                        }
+
+                        var respJson = string.Format("{{\"sheets\":[{0}]}}", string.Join(",", list.ToArray()));
+                        return FormatResponse(reqId, respJson);
+                    }
+
                     // Unknown op
                     return FormatError(reqId, "INVALID_ARGUMENT", "unsupported operation: " + op, 0, Health.Value.ToString().ToLowerInvariant(), true);
-                }, 30000);
+                }, 60000);
             }
             catch (NXException nxEx)
             {
