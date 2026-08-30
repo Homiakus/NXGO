@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/Homiakus/NXGO/internal/apiscanner"
 	"github.com/Homiakus/NXGO/internal/protocol"
 	"github.com/Homiakus/NXGO/internal/supervisor"
 )
@@ -36,13 +38,15 @@ func run(args []string) error {
 		return runDoctor(ctx, args[1:])
 	case "status":
 		return runStatus(args[1:])
+	case "api":
+		return runAPI(ctx, args[1:])
 	case "test":
 		if len(args) < 2 {
 			return errors.New("usage: nxctl test <fast|fuzz|nx|matrix|chaos|soak|perf>")
 		}
 		return runTest(ctx, args[1])
 	default:
-		return fmt.Errorf("unknown command %q (supported: test, installations, doctor, status)", args[0])
+		return fmt.Errorf("unknown command %q (supported: test, installations, doctor, status, api)", args[0])
 	}
 }
 
@@ -219,3 +223,172 @@ func runCmd(ctx context.Context, name string, args ...string) error {
     if err := cmd.Run(); err != nil { return fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err) }
     return nil
 }
+
+func runAPI(ctx context.Context, args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: nxctl api <scan|find|inspect|diff> [options]")
+	}
+	switch args[0] {
+	case "scan":
+		return runAPIScan(ctx, args[1:])
+	case "find":
+		return runAPIFind(args[1:])
+	case "inspect":
+		return runAPIInspect(args[1:])
+	case "diff":
+		return runAPIDiff(args[1:])
+	default:
+		return fmt.Errorf("unknown api subcommand %q (supported: scan, find, inspect, diff)", args[0])
+	}
+}
+
+func runAPIScan(ctx context.Context, args []string) error {
+	var managedDir string
+	var outFile string
+
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--out" && i+1 < len(args) {
+			outFile = args[i+1]
+			i++
+		} else if !strings.HasPrefix(args[i], "-") {
+			managedDir = args[i]
+		}
+	}
+
+	if managedDir == "" {
+		installs, err := supervisor.Discover()
+		if err != nil || len(installs) == 0 {
+			return errors.New("no Siemens NX installation detected for API scanning; specify path explicitly")
+		}
+		managedDir = filepath.Dir(installs[0].NXOpenDLL)
+	}
+
+	fmt.Printf("Scanning NXOpen managed assemblies from: %s\n", managedDir)
+	manifest, err := apiscanner.ScanManagedAssemblies(ctx, managedDir)
+	if err != nil {
+		return fmt.Errorf("scan failed: %w", err)
+	}
+
+	fmt.Printf("Scanned %d exported types across %d assemblies.\n", len(manifest.Types), len(manifest.Assemblies))
+
+	if outFile != "" {
+		b, err := json.MarshalIndent(manifest, "", "  ")
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(outFile, b, 0644); err != nil {
+			return fmt.Errorf("failed writing manifest to %s: %w", outFile, err)
+		}
+		fmt.Printf("API manifest saved to: %s\n", outFile)
+	}
+	return nil
+}
+
+func runAPIFind(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: nxctl api find <query> [--manifest <file.json>]")
+	}
+	query := args[0]
+	manifestFile := "api-manifest.json"
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--manifest" && i+1 < len(args) {
+			manifestFile = args[i+1]
+		}
+	}
+
+	b, err := os.ReadFile(manifestFile)
+	if err != nil {
+		return fmt.Errorf("failed reading manifest %s (run 'nxctl api scan --out %s' first): %w", manifestFile, manifestFile, err)
+	}
+
+	var manifest apiscanner.APIManifest
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		return err
+	}
+
+	matches := apiscanner.SearchTypes(&manifest, query)
+	fmt.Printf("Found %d matching types for query %q in %s (%s):\n", len(matches), query, manifestFile, manifest.Release)
+	for i, m := range matches {
+		if i >= 30 {
+			fmt.Printf("... and %d more matches\n", len(matches)-30)
+			break
+		}
+		fmt.Printf("  [%s] %s.%s (%d methods, %d properties)\n", m.Kind, m.Namespace, m.Name, len(m.Methods), len(m.Properties))
+	}
+	return nil
+}
+
+func runAPIInspect(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: nxctl api inspect <TypeName> [--manifest <file.json>]")
+	}
+	typeName := args[0]
+	manifestFile := "api-manifest.json"
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--manifest" && i+1 < len(args) {
+			manifestFile = args[i+1]
+		}
+	}
+
+	b, err := os.ReadFile(manifestFile)
+	if err != nil {
+		return fmt.Errorf("failed reading manifest %s: %w", manifestFile, err)
+	}
+
+	var manifest apiscanner.APIManifest
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		return err
+	}
+
+	info := apiscanner.InspectType(&manifest, typeName)
+	if info == nil {
+		return fmt.Errorf("type %q not found in manifest", typeName)
+	}
+
+	fmt.Printf("=== %s: %s.%s (%s) ===\n", info.Kind, info.Namespace, info.Name, info.Assembly)
+	if len(info.Properties) > 0 {
+		fmt.Println("\nProperties:")
+		for _, p := range info.Properties {
+			fmt.Printf("  %s %s { read: %v, write: %v }\n", p.Type, p.Name, p.CanRead, p.CanWrite)
+		}
+	}
+	if len(info.Methods) > 0 {
+		fmt.Println("\nMethods:")
+		for _, m := range info.Methods {
+			var paramStrs []string
+			for _, p := range m.Parameters {
+				paramStrs = append(paramStrs, fmt.Sprintf("%s %s", p.Type, p.Name))
+			}
+			fmt.Printf("  %s %s(%s)\n", m.ReturnType, m.Name, strings.Join(paramStrs, ", "))
+		}
+	}
+	return nil
+}
+
+func runAPIDiff(args []string) error {
+	if len(args) < 2 {
+		return errors.New("usage: nxctl api diff <manifest-a.json> <manifest-b.json>")
+	}
+	bA, err := os.ReadFile(args[0])
+	if err != nil { return fmt.Errorf("read %s: %w", args[0], err) }
+	bB, err := os.ReadFile(args[1])
+	if err != nil { return fmt.Errorf("read %s: %w", args[1], err) }
+
+	var mA, mB apiscanner.APIManifest
+	if err := json.Unmarshal(bA, &mA); err != nil { return err }
+	if err := json.Unmarshal(bB, &mB); err != nil { return err }
+
+	diff := apiscanner.DiffManifests(&mA, &mB)
+	fmt.Printf("=== API Diff: %s vs %s ===\n", diff.ReleaseA, diff.ReleaseB)
+	fmt.Printf("Added Types: %d\n", len(diff.AddedTypes))
+	for _, t := range diff.AddedTypes { fmt.Printf("  + [Type] %s\n", t) }
+	fmt.Printf("Removed Types: %d\n", len(diff.RemovedTypes))
+	for _, t := range diff.RemovedTypes { fmt.Printf("  - [Type] %s\n", t) }
+	fmt.Printf("Added Methods: %d\n", len(diff.AddedMethods))
+	for _, m := range diff.AddedMethods { fmt.Printf("  + [Method] %s\n", m) }
+	fmt.Printf("Removed Methods: %d\n", len(diff.RemovedMethods))
+	for _, m := range diff.RemovedMethods { fmt.Printf("  - [Method] %s\n", m) }
+
+	return nil
+}
+

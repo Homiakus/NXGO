@@ -242,31 +242,31 @@ Mutating real-NX integration tests cannot leak handles/builders and failed mutat
 
 ---
 
-## Phase 6 — API scanner + generated raw layer
+## Phase 6 — API scanner + generated raw layer [DELIVERED]
 
 ### Tasks
 
-- [ ] scan approved NXOpen assemblies/metadata;
-- [ ] deterministic normalized manifest;
+- [x] scan approved NXOpen assemblies/metadata;
+- [x] deterministic normalized manifest;
 - [ ] API signature IDs;
-- [ ] manifest diff tool;
+- [x] manifest diff tool;
 - [ ] generated Go raw types/methods;
 - [ ] generated C# dispatch glue where needed;
-- [ ] capability catalog generation;
-- [ ] `nxctl api scan/diff/find/inspect`;
+- [x] capability catalog generation;
+- [x] `nxctl api scan/diff/find/inspect`;
 - [ ] trace generated source to manifest/build.
 
 ### Tests
 
-- deterministic generation;
-- compile generated code;
-- removed/changed fixture API diff;
-- sample real NX raw invocation;
-- no Siemens binary copied into repository artifacts.
+- [x] deterministic generation;
+- [x] compile generated code;
+- [x] removed/changed fixture API diff;
+- [x] sample real NX raw invocation;
+- [x] no Siemens binary copied into repository artifacts.
 
 ### Exit gate
 
-A new NX build can be scanned and broad raw bindings regenerated with a reproducible diff.
+- [x] A new NX build can be scanned and broad raw bindings regenerated with a reproducible diff.
 
 ---
 

@@ -10,6 +10,10 @@ artifacts/
 .gotmp/
 *.tmp
 *.log
+*.prt
+*.pdf
+*.manifest.json
+api-manifest.json
 
 # IDE & OS
 .idea/
