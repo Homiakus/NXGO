@@ -24,6 +24,7 @@ type SessionInfo struct {
 	WorkPart   string `json:"work_part,omitempty"`
 	Epoch      uint64 `json:"epoch"`
 	SessionID  string `json:"session_id"`
+	SyslogPath string `json:"syslog_path,omitempty"`
 }
 
 type Session struct {

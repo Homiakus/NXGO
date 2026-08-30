@@ -174,7 +174,7 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 
 ---
 
-## Phase 4 — Supervisor and continuous logs [IN PROGRESS]
+## Phase 4 — Supervisor and continuous logs [DELIVERED]
 
 ### Tasks
 
@@ -183,8 +183,8 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 - [x] worker launcher;
 - [x] ownership manifest;
 - [x] timeout/watchdog;
-- [ ] NX syslog discovery/follow;
-- [ ] merge NX/Agent/runner logs;
+- [x] NX syslog discovery/follow;
+- [x] merge NX/Agent/runner logs;
 - [x] preliminary per-run artifact directory in real-NX smoke;
 - [x] failure artifact bundling / diagnostic output capture;
 - [x] process crash/fatal-error classification;
@@ -193,15 +193,15 @@ The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **tempo
 
 ### Tests
 
-- forced process kill;
-- hung/fake worker timeout;
-- log rotation/truncation;
-- worker orphan cleanup;
-- simultaneous side-by-side NX installations.
+- [x] forced process kill;
+- [x] hung/fake worker timeout;
+- [x] log rotation/truncation;
+- [x] worker orphan cleanup;
+- [x] simultaneous side-by-side NX installations.
 
 ### Exit gate
 
-Every worker failure is classified and leaves sufficient diagnostics for reproduction.
+- [x] Every worker failure is classified and leaves sufficient diagnostics for reproduction.
 
 ---
 

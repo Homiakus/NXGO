@@ -136,13 +136,16 @@
     },
     {
       "id": "NXGO-INV-OBS-002",
-      "status": "partially_enforced",
+      "status": "enforced",
       "mechanisms": [
         "internal/supervisor/manifest.go",
         "internal/supervisor/manifest_test.go",
-        "scripts/nx-real-smoke.ps1"
+        "internal/supervisor/syslog.go",
+        "internal/supervisor/syslog_test.go",
+        "scripts/nx-real-smoke.ps1",
+        "tests/nx/syslog_test.go"
       ],
-      "note": "Supervisor manifests and real-NX smoke harness preserve run artifacts, PID records, and syslog outputs."
+      "note": "Supervisor manifests, syslog harvester, and real-NX test harness stream and preserve run artifacts, PID records, and syslog outputs."
     },
     {
       "id": "NXGO-INV-TEST-001",

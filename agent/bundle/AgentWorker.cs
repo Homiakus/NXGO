@@ -611,14 +611,17 @@ public class Program
                         var ugiiVer = session.GetEnvironmentVariableValue("UGII_VERSION");
                         var baseDir = session.GetEnvironmentVariableValue("UGII_BASE_DIR");
                         string activePartName = session.Parts.Work != null ? session.Parts.Work.Name : "";
+                        string syslogPath = "";
+                        try { syslogPath = session.LogFile.FileName; } catch {}
                         var respJson = string.Format(
-                            "{{\"release\":\"{0}\",\"base_dir\":\"{1}\",\"thread_id\":{2},\"work_part\":\"{3}\",\"epoch\":{4},\"session_id\":\"{5}\"}}",
+                            "{{\"release\":\"{0}\",\"base_dir\":\"{1}\",\"thread_id\":{2},\"work_part\":\"{3}\",\"epoch\":{4},\"session_id\":\"{5}\",\"syslog_path\":\"{6}\"}}",
                             ugiiVer,
                             baseDir != null ? baseDir.Replace('\\', '/') : "",
                             Thread.CurrentThread.ManagedThreadId,
                             activePartName,
                             Registry.Epoch,
-                            Registry.SessionId
+                            Registry.SessionId,
+                            syslogPath != null ? syslogPath.Replace('\\', '/') : ""
                         );
                         return FormatResponse(reqId, respJson);
                     }
