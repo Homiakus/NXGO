@@ -1,6 +1,8 @@
 using System.IO.Pipes;
 using System.Text;
+using Google.Protobuf;
 using NXGO.Agent.Core;
+using NXGO.Protocol.V1;
 using Xunit;
 
 namespace NXGO.Agent.Core.Tests;
@@ -114,6 +116,30 @@ public sealed class AgentCoreTests
     {
         var frame = FrameCodec.Encode(Encoding.UTF8.GetBytes("ping"));
         Assert.Equal("0400000070696E67", Convert.ToHexString(frame));
+    }
+
+    [Fact]
+    public void Protobuf_wire_message_round_trips_client_hello()
+    {
+        var message = new WireMessage
+        {
+            MessageId = "msg-1",
+            ClientHello = new ClientHello
+            {
+                Protocol = new ProtocolVersion { Major = 1, Minor = 0 },
+                SdkVersion = "test-sdk",
+                ClientProcessId = 123,
+                ConnectionNonce = ByteString.CopyFromUtf8("0123456789abcdef")
+            }
+        };
+
+        var encoded = message.ToByteArray();
+        var decoded = WireMessage.Parser.ParseFrom(encoded);
+
+        Assert.Equal("msg-1", decoded.MessageId);
+        Assert.Equal(1u, decoded.ClientHello.Protocol.Major);
+        Assert.Equal("test-sdk", decoded.ClientHello.SdkVersion);
+        Assert.Equal(123uL, decoded.ClientHello.ClientProcessId);
     }
 
     [Fact]
