@@ -1,0 +1,17 @@
+# Build outputs and binaries
+bin/
+dist/
+*.exe
+*.dll
+*.pdb
+
+# Runtime artifacts and temporary files
+artifacts/
+.gotmp/
+*.tmp
+*.log
+
+# IDE & OS
+.idea/
+.vscode/
+Thumbs.db

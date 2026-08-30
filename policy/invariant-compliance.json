@@ -116,6 +116,28 @@
       "note": "Request-ID idempotency contract and mandatory envelope validation exist across pure-Go framed transport; production Agent store is pending."
     },
     {
+      "id": "NXGO-INV-OBS-002",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/supervisor/manifest.go",
+        "internal/supervisor/manifest_test.go",
+        "scripts/nx-real-smoke.ps1"
+      ],
+      "note": "Supervisor manifests and real-NX smoke harness preserve run artifacts, PID records, and syslog outputs."
+    },
+    {
+      "id": "NXGO-INV-TEST-001",
+      "status": "partially_enforced",
+      "mechanisms": [
+        "internal/supervisor/discovery.go",
+        "internal/supervisor/discovery_test.go",
+        "internal/supervisor/doctor.go",
+        "internal/supervisor/doctor_test.go",
+        "cmd/nxctl/main.go"
+      ],
+      "note": "NX discovery and doctor report detected release paths, UGII binaries, managed assemblies, and environment settings deterministically."
+    },
+    {
       "id": "NXGO-INV-TEST-003",
       "status": "partially_enforced",
       "mechanisms": [
