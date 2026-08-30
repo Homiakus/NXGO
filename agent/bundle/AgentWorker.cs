@@ -942,6 +942,110 @@ public class Program
                         return FormatResponse(reqId, respJson);
                     }
 
+                    // Assembly operations (Phase 7)
+                    if (op == "assembly.add_component")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        string partPath = ExtractJsonString(payloadRaw, "part_path");
+                        if (string.IsNullOrEmpty(partPath))
+                        {
+                            throw new ArgumentException("missing part_path for assembly.add_component");
+                        }
+                        string compName = ExtractJsonString(payloadRaw, "component_name");
+                        if (string.IsNullOrEmpty(compName)) compName = "comp_" + Guid.NewGuid().ToString("N").Substring(0, 6);
+                        double[] origin = ExtractJsonDoubleArray3(payloadRaw, "origin");
+                        double[] orient = ExtractJsonDoubleArray9(payloadRaw, "orientation");
+                        int layer = (int)ExtractJsonUlong(payloadRaw, "layer", 1);
+
+                        var matrix = new Matrix3x3
+                        {
+                            Xx = orient[0], Xy = orient[1], Xz = orient[2],
+                            Yx = orient[3], Yy = orient[4], Yz = orient[5],
+                            Zx = orient[6], Zy = orient[7], Zz = orient[8]
+                        };
+
+                        PartLoadStatus loadStatus;
+                        Component comp = part.ComponentAssembly.AddComponent(
+                            partPath,
+                            "MODEL",
+                            compName,
+                            new Point3d(origin[0], origin[1], origin[2]),
+                            matrix,
+                            layer,
+                            out loadStatus
+                        );
+                        if (loadStatus != null) loadStatus.Dispose();
+
+                        uint compTag = 0;
+                        string compObjId = Registry.Register(comp, "Component", "", out compTag);
+                        string compHandleJson = Registry.FormatHandleJson(compObjId, "Component", compTag, "");
+
+                        var respJson = string.Format(
+                            "{{\"component_ref\":{0},\"component_name\":\"{1}\",\"part_path\":\"{2}\",\"native_tag\":{3}}}",
+                            compHandleJson,
+                            comp.DisplayName,
+                            partPath.Replace('\\', '/'),
+                            compTag
+                        );
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "assembly.query_tree")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        Component root = part.ComponentAssembly.RootComponent;
+                        string treeJson = SerializeComponentNode(root);
+                        var respJson = string.Format("{{\"root\":{0}}}", treeJson);
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "assembly.query_bom")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        Component root = part.ComponentAssembly.RootComponent;
+                        var items = new Dictionary<string, List<string>>();
+                        if (root != null)
+                        {
+                            CollectBOMItems(root, items);
+                        }
+
+                        var bomList = new List<string>();
+                        foreach (var kvp in items)
+                        {
+                            var names = string.Join(",", kvp.Value.ConvertAll(n => "\"" + n + "\"").ToArray());
+                            var path = kvp.Key.Replace('\\', '/');
+                            var leaf = Path.GetFileName(kvp.Key);
+                            bomList.Add(string.Format(
+                                "{{\"part_name\":\"{0}\",\"part_path\":\"{1}\",\"quantity\":{2},\"component_names\":[{3}]}}",
+                                leaf, path, kvp.Value.Count, names
+                            ));
+                        }
+
+                        var respJson = string.Format("{{\"items\":[{0}]}}", string.Join(",", bomList.ToArray()));
+                        return FormatResponse(reqId, respJson);
+                    }
+
+                    if (op == "assembly.remove_component")
+                    {
+                        Part part = ResolvePartFromPayload(session, payloadRaw);
+                        Component comp = ResolveComponentFromPayload(session, payloadRaw);
+                        string objId = ExtractJsonString(payloadRaw, "object_id");
+                        string compRefJson = ExtractJsonObjectOrSection(payloadRaw, "component_ref");
+                        if (!string.IsNullOrEmpty(compRefJson))
+                        {
+                            string subObjId = ExtractJsonString(compRefJson, "object_id");
+                            if (!string.IsNullOrEmpty(subObjId)) objId = subObjId;
+                        }
+
+                        part.ComponentAssembly.RemoveComponent(comp);
+                        if (!string.IsNullOrEmpty(objId))
+                        {
+                            Registry.Release(objId);
+                        }
+
+                        return FormatResponse(reqId, "{\"removed\":true}");
+                    }
+
                     // Unknown op
                     return FormatError(reqId, "INVALID_ARGUMENT", "unsupported operation: " + op, 0, Health.Value.ToString().ToLowerInvariant(), true);
                 }, 30000);
@@ -971,13 +1075,29 @@ public class Program
 
     private static Part ResolvePartFromPayload(Session session, string payloadJson)
     {
+        string partRefJson = ExtractJsonObjectOrSection(payloadJson, "assembly_part_ref");
+        if (string.IsNullOrEmpty(partRefJson))
+        {
+            partRefJson = ExtractJsonObjectOrSection(payloadJson, "part_ref");
+        }
+        if (!string.IsNullOrEmpty(partRefJson) && partRefJson.StartsWith("{"))
+        {
+            string subObjId = ExtractJsonString(partRefJson, "object_id");
+            if (!string.IsNullOrEmpty(subObjId))
+            {
+                ulong epoch = ExtractJsonUlong(partRefJson, "epoch", Registry.Epoch);
+                string sessId = ExtractJsonString(partRefJson, "session_id");
+                if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
+                return Registry.Resolve<Part>(subObjId, epoch, sessId);
+            }
+        }
         string objId = ExtractJsonString(payloadJson, "object_id");
         if (!string.IsNullOrEmpty(objId))
         {
             ulong epoch = ExtractJsonUlong(payloadJson, "epoch", Registry.Epoch);
             string sessId = ExtractJsonString(payloadJson, "session_id");
             if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-            return Registry.Resolve<Part>(objId, epoch, sessId);
+            try { return Registry.Resolve<Part>(objId, epoch, sessId); } catch {}
         }
         if (session.Parts.Work != null) return session.Parts.Work;
         if (session.Parts.Display != null) return session.Parts.Display;
@@ -1159,5 +1279,133 @@ public class Program
             else break;
         }
         return list;
+    }
+
+    private static Component ResolveComponentFromPayload(Session session, string payloadJson)
+    {
+        string compRefJson = ExtractJsonObjectOrSection(payloadJson, "component_ref");
+        if (!string.IsNullOrEmpty(compRefJson) && compRefJson.StartsWith("{"))
+        {
+            string subObjId = ExtractJsonString(compRefJson, "object_id");
+            if (!string.IsNullOrEmpty(subObjId))
+            {
+                ulong epoch = ExtractJsonUlong(compRefJson, "epoch", Registry.Epoch);
+                string sessId = ExtractJsonString(compRefJson, "session_id");
+                if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
+                return Registry.Resolve<Component>(subObjId, epoch, sessId);
+            }
+        }
+        string objId = ExtractJsonString(payloadJson, "object_id");
+        if (!string.IsNullOrEmpty(objId))
+        {
+            ulong epoch = ExtractJsonUlong(payloadJson, "epoch", Registry.Epoch);
+            string sessId = ExtractJsonString(payloadJson, "session_id");
+            if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
+            return Registry.Resolve<Component>(objId, epoch, sessId);
+        }
+        throw new InvalidOperationException("missing component reference in payload");
+    }
+
+    private static string SerializeComponentNode(Component comp)
+    {
+        if (comp == null) return "{}";
+        uint tag = 0;
+        string objId = Registry.Register(comp, "Component", "", out tag);
+        string handleJson = Registry.FormatHandleJson(objId, "Component", tag, "");
+
+        Point3d pos;
+        Matrix3x3 orient;
+        try { comp.GetPosition(out pos, out orient); } catch { pos = new Point3d(0, 0, 0); }
+
+        string protoPath = "";
+        try
+        {
+            if (comp.Prototype != null && comp.Prototype.OwningPart != null)
+            {
+                protoPath = comp.Prototype.OwningPart.FullPath.Replace('\\', '/');
+            }
+        }
+        catch {}
+
+        var childList = new List<string>();
+        try
+        {
+            foreach (Component child in comp.GetChildren())
+            {
+                childList.Add(SerializeComponentNode(child));
+            }
+        }
+        catch {}
+
+        return string.Format(
+            System.Globalization.CultureInfo.InvariantCulture,
+            "{{\"component_ref\":{0},\"name\":\"{1}\",\"display_name\":\"{2}\",\"prototype_path\":\"{3}\",\"position\":[{4:F6},{5:F6},{6:F6}],\"children\":[{7}]}}",
+            handleJson,
+            comp.Name ?? "",
+            comp.DisplayName ?? "",
+            protoPath,
+            pos.X, pos.Y, pos.Z,
+            string.Join(",", childList.ToArray())
+        );
+    }
+
+    private static void CollectBOMItems(Component comp, Dictionary<string, List<string>> items)
+    {
+        if (comp == null) return;
+        Component[] children = null;
+        try { children = comp.GetChildren(); } catch {}
+
+        if (children != null && children.Length > 0)
+        {
+            foreach (var c in children)
+            {
+                CollectBOMItems(c, items);
+            }
+        }
+        else
+        {
+            string path = "";
+            try
+            {
+                if (comp.Prototype != null && comp.Prototype.OwningPart != null)
+                {
+                    path = comp.Prototype.OwningPart.FullPath;
+                }
+            }
+            catch {}
+            if (string.IsNullOrEmpty(path)) path = comp.DisplayName;
+
+            List<string> list;
+            if (!items.TryGetValue(path, out list))
+            {
+                list = new List<string>();
+                items[path] = list;
+            }
+            list.Add(comp.DisplayName);
+        }
+    }
+
+    private static double[] ExtractJsonDoubleArray9(string json, string key)
+    {
+        var res = new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+        if (string.IsNullOrEmpty(json)) return res;
+        var search = "\"" + key + "\":";
+        var idx = json.IndexOf(search, StringComparison.Ordinal);
+        if (idx < 0) return res;
+        var start = json.IndexOf("[", idx, StringComparison.Ordinal);
+        if (start < 0) return res;
+        var end = json.IndexOf("]", start, StringComparison.Ordinal);
+        if (end < 0) return res;
+        var inner = json.Substring(start + 1, end - start - 1);
+        var parts = inner.Split(',');
+        for (int i = 0; i < parts.Length && i < 9; i++)
+        {
+            double val;
+            if (double.TryParse(parts[i].Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out val))
+            {
+                res[i] = val;
+            }
+        }
+        return res;
     }
 }

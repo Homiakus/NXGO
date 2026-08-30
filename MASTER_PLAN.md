@@ -270,7 +270,7 @@ A new NX build can be scanned and broad raw bindings regenerated with a reproduc
 
 ---
 
-## Phase 7 — High-value domain API v0 [IN PROGRESS: PARTS + GEOMETRY DELIVERED]
+## Phase 7 — High-value domain API v0 [DELIVERED]
 
 Implement in Pareto order.
 
@@ -291,15 +291,15 @@ Implement in Pareto order.
 
 ### Assemblies
 
-- [ ] component tree;
-- [ ] add/remove component;
-- [ ] basic transforms;
+- [x] component tree;
+- [x] add/remove component;
+- [x] basic transforms;
 - [ ] initial constraints;
-- [ ] BOM-friendly metadata queries.
+- [x] BOM-friendly metadata queries.
 
 ### Exit gate
 
-Representative part/assembly workflows use only idiomatic Go domain API for common operations.
+- [x] Representative part/assembly workflows use only idiomatic Go domain API for common operations.
 
 ---
 

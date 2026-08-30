@@ -355,4 +355,64 @@ type PartQueryBodiesResponse struct {
 	Bodies []BodyInfoWire `json:"bodies"`
 }
 
+// Assembly operation payloads (Phase 7)
+
+type AssemblyAddComponentRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	PartPath        string            `json:"part_path"`
+	ComponentName   string            `json:"component_name,omitempty"`
+	Origin          [3]float64        `json:"origin"`
+	Orientation     [9]float64        `json:"orientation,omitempty"` // 3x3 matrix row-major
+	Layer           int               `json:"layer,omitempty"`
+}
+
+type AssemblyAddComponentResponse struct {
+	ComponentRef  ObjectHandleWire `json:"component_ref"`
+	ComponentName string           `json:"component_name"`
+	PartPath      string           `json:"part_path"`
+	NativeTag     uint32           `json:"native_tag,omitempty"`
+}
+
+type AssemblyQueryTreeRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+}
+
+type AssemblyComponentNodeWire struct {
+	ComponentRef  ObjectHandleWire            `json:"component_ref"`
+	Name          string                      `json:"name"`
+	DisplayName   string                      `json:"display_name"`
+	PrototypePath string                      `json:"prototype_path"`
+	Position      [3]float64                  `json:"position"`
+	Children      []AssemblyComponentNodeWire `json:"children,omitempty"`
+}
+
+type AssemblyQueryTreeResponse struct {
+	Root AssemblyComponentNodeWire `json:"root"`
+}
+
+type AssemblyQueryBOMRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+}
+
+type AssemblyBOMItemWire struct {
+	PartName       string   `json:"part_name"`
+	PartPath       string   `json:"part_path"`
+	Quantity       int      `json:"quantity"`
+	ComponentNames []string `json:"component_names"`
+}
+
+type AssemblyQueryBOMResponse struct {
+	Items []AssemblyBOMItemWire `json:"items"`
+}
+
+type AssemblyRemoveComponentRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ComponentRef    ObjectHandleWire  `json:"component_ref"`
+}
+
+type AssemblyRemoveComponentResponse struct {
+	Removed bool `json:"removed"`
+}
+
+
 
