@@ -36,6 +36,8 @@
       "id": "NXGO-INV-EXEC-001",
       "status": "partially_enforced",
       "mechanisms": [
+        "internal/transport/pipe/pipe.go",
+        "internal/transport/pipe/pipe_test.go",
         "agent/NXGO.Agent.Core/NxExecutor.cs",
         "agent/NXGO.Agent.Core/NamedPipeRequestServer.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
@@ -76,10 +78,12 @@
       "mechanisms": [
         "internal/protocol/messages.go",
         "internal/protocol/messages_test.go",
+        "internal/transport/pipe/pipe.go",
+        "internal/transport/pipe/pipe_test.go",
         "agent/NXGO.Agent.Core/NxExecutor.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs"
       ],
-      "note": "Protocol defines structured timeout/cancellation envelopes and Agent Core provides safe queue cancellation without thread abort."
+      "note": "Protocol defines structured timeout/cancellation envelopes, Pure-Go client respects context cancellation, and Agent Core provides safe queue cancellation without thread abort."
     },
     {
       "id": "NXGO-INV-IPC-002",
@@ -105,9 +109,11 @@
         "internal/fakeagent/fakeagent.go",
         "internal/fakeagent/fakeagent_test.go",
         "internal/protocol/messages.go",
-        "internal/protocol/messages_test.go"
+        "internal/protocol/messages_test.go",
+        "internal/transport/pipe/pipe.go",
+        "internal/transport/pipe/pipe_test.go"
       ],
-      "note": "Request-ID idempotency contract and mandatory envelope validation exist; production Agent store is pending."
+      "note": "Request-ID idempotency contract and mandatory envelope validation exist across pure-Go framed transport; production Agent store is pending."
     },
     {
       "id": "NXGO-INV-TEST-003",

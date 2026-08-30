@@ -107,8 +107,8 @@ Fresh checkout builds/tests all non-NX components deterministically; NXHost addi
 - [x] cancellation semantics for queued executor work at core level;
 - [x] bounded length-prefixed bootstrap framing;
 - [x] named-pipe server transport primitive;
-- [ ] Pure-Go Windows named-pipe production client;
-- [ ] fake Agent server over production transport for Go tests;
+- [x] Pure-Go Windows named-pipe production client;
+- [x] fake Agent server over production transport for Go tests;
 - [x] initial in-process Fake-Agent failure semantics for request-ID idempotency and session poison.
 
 ### Tests
@@ -117,6 +117,7 @@ Fresh checkout builds/tests all non-NX components deterministically; NXHost addi
 - [x] bootstrap frame malformed/length mismatch tests;
 - [x] bootstrap frame fuzz target;
 - [x] local named-pipe roundtrip in Agent Core suite;
+- [x] pure-Go framed transport client roundtrip;
 - [x] queued request cancellation before NX execution;
 - [ ] broken pipe during real transport request;
 - [ ] oversized production message;

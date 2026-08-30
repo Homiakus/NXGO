@@ -1,11 +1,14 @@
 package fakeagent
 
 import (
-    "context"
-    "errors"
-    "sync"
+	"context"
+	"errors"
+	"io"
+	"sync"
 
-    "github.com/Homiakus/NXGO/internal/sessionhealth"
+	"github.com/Homiakus/NXGO/internal/protocol"
+	"github.com/Homiakus/NXGO/internal/sessionhealth"
+	"github.com/Homiakus/NXGO/internal/transport/pipe"
 )
 
 var ErrTransportLost = errors.New("simulated transport loss")
@@ -64,3 +67,96 @@ func (a *Agent) Execute(ctx context.Context, r Request) (Response, error) {
 func (a *Agent) Applied() int { a.mu.Lock(); defer a.mu.Unlock(); return a.applied }
 func (a *Agent) RecordCount() int { a.mu.Lock(); defer a.mu.Unlock(); return len(a.records) }
 func (a *Agent) Health() sessionhealth.State { a.mu.Lock(); defer a.mu.Unlock(); return a.health }
+
+func (a *Agent) ServeTransport(ctx context.Context, rwc io.ReadWriteCloser) error {
+	defer rwc.Close()
+	framed := pipe.NewFramedConn(rwc, protocol.DefaultMaxPayloadBytes)
+
+	// 1. Handshake
+	hsBytes, err := framed.Receive()
+	if err != nil {
+		return err
+	}
+	hsReq, err := protocol.DecodePayload[protocol.HandshakeRequest](hsBytes)
+	if err != nil {
+		return err
+	}
+	if err := hsReq.Validate(); err != nil {
+		return err
+	}
+
+	hsResp := protocol.HandshakeResponse{
+		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
+		AgentVersion:    "v0.1.0-fake",
+		NXRelease:       "FakeNX-2512",
+		NXBuild:         "2512.1000",
+		NXProcessID:     9999,
+		SessionID:       "fake-session-1",
+		Epoch:           1,
+		Capabilities:    []string{"nx.ping", "part.open", "part.save", "part.close"},
+		MaxPayloadBytes: protocol.DefaultMaxPayloadBytes,
+		SecurityPolicy:  "local_pipe_only",
+	}
+	hsRespBytes, err := protocol.EncodePayload(hsResp)
+	if err != nil {
+		return err
+	}
+	if err := framed.Send(hsRespBytes); err != nil {
+		return err
+	}
+
+	// 2. Request / Response loop
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		reqBytes, err := framed.Receive()
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil
+			}
+			return err
+		}
+
+		req, err := protocol.DecodePayload[protocol.RequestEnvelope](reqBytes)
+		if err != nil {
+			return err
+		}
+
+		var resp protocol.ResponseEnvelope
+		resp.RequestID = req.RequestID
+
+		// Execute through idempotency / health state
+		res, execErr := a.Execute(ctx, Request{
+			ID:       req.RequestID,
+			Mutation: req.Op == "part.save" || req.Op == "part.modify",
+			Fault:    NoFault,
+		})
+
+		if execErr != nil {
+			resp.Status = protocol.StatusError
+			resp.Error = &protocol.ErrorEnvelope{
+				Category:      protocol.ErrCategorySessionDirty,
+				Message:       execErr.Error(),
+				Op:            req.Op,
+				Recoverable:   false,
+				SessionHealth: a.Health().String(),
+				CorrelationID: req.CorrelationID,
+			}
+		} else {
+			resp.Status = protocol.StatusOK
+			respPayload, _ := protocol.EncodePayload(res)
+			resp.Payload = respPayload
+			resp.Timing = protocol.TimingData{ExecutionMs: 1}
+		}
+
+		respBytes, err := protocol.EncodePayload(resp)
+		if err != nil {
+			return err
+		}
+		if err := framed.Send(respBytes); err != nil {
+			return err
+		}
+	}
+}
+

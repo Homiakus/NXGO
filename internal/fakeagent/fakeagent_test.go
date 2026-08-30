@@ -1,10 +1,14 @@
 package fakeagent
 
 import (
-    "context"
-    "errors"
-    "fmt"
-    "testing"
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"testing"
+
+	"github.com/Homiakus/NXGO/internal/protocol"
+	"github.com/Homiakus/NXGO/internal/transport/pipe"
 )
 
 func TestChaosMutationResponseLossDoesNotDuplicateMutation(t *testing.T) {
@@ -39,3 +43,72 @@ func BenchmarkExecuteUniqueRead(b *testing.B) {
         _, _ = a.Execute(ctx, Request{ID: fmt.Sprintf("r-%d", i)})
     }
 }
+
+func TestFakeAgentTransportClientRoundtrip(t *testing.T) {
+	agent := New()
+	clientConn, serverConn := net.Pipe()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		_ = agent.ServeTransport(ctx, serverConn)
+	}()
+
+	client := pipe.NewClient(clientConn)
+	defer client.Close()
+
+	// 1. Handshake
+	hsResp, err := client.Handshake(ctx, &protocol.HandshakeRequest{
+		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
+		SDKVersion:      "v0.1.0",
+		ClientPID:       1000,
+		Nonce:           "test-nonce-1",
+	})
+	if err != nil {
+		t.Fatalf("handshake failed: %v", err)
+	}
+	if hsResp.SessionID != "fake-session-1" || hsResp.Epoch != 1 {
+		t.Fatalf("unexpected handshake response: %+v", hsResp)
+	}
+
+	// 2. Query call
+	resp, err := client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: "req-q1",
+		Op:        "nx.ping",
+	})
+	if err != nil {
+		t.Fatalf("call failed: %v", err)
+	}
+	if resp.Status != protocol.StatusOK {
+		t.Fatalf("expected status OK, got %s", resp.Status)
+	}
+
+	// 3. Mutating call with idempotent replay
+	m1, err := client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: "req-mut-1",
+		Op:        "part.save",
+	})
+	if err != nil {
+		t.Fatalf("mutating call failed: %v", err)
+	}
+	if m1.Status != protocol.StatusOK {
+		t.Fatalf("expected OK, got %s", m1.Status)
+	}
+
+	m2, err := client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: "req-mut-1", // same request ID
+		Op:        "part.save",
+	})
+	if err != nil {
+		t.Fatalf("idempotent replay failed: %v", err)
+	}
+	if m2.Status != protocol.StatusOK {
+		t.Fatalf("expected OK on idempotent replay, got %s", m2.Status)
+	}
+
+	if agent.Applied() != 1 {
+		t.Fatalf("mutation duplicated over transport: applied=%d", agent.Applied())
+	}
+}
+
