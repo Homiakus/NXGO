@@ -36,11 +36,16 @@ public sealed class AgentCoreTests
         var executor = new NxExecutor();
         executor.BindToCurrentThread();
         var boundThread = Environment.CurrentManagedThreadId;
+        var executedThread = -1;
         Task<int>? queuedTask = null;
         using var queued = new ManualResetEventSlim(false);
         var producer = new Thread(() =>
         {
-            queuedTask = executor.Enqueue(() => Environment.CurrentManagedThreadId);
+            queuedTask = executor.Enqueue(() =>
+            {
+                executedThread = Environment.CurrentManagedThreadId;
+                return 1;
+            });
             queued.Set();
         });
         producer.Start();
@@ -50,7 +55,8 @@ public sealed class AgentCoreTests
         Assert.NotNull(queuedTask);
         Assert.False(queuedTask!.IsCompleted);
         Assert.True(executor.DrainOne());
-        Assert.Equal(boundThread, queuedTask.GetAwaiter().GetResult());
+        Assert.True(queuedTask.IsCompletedSuccessfully);
+        Assert.Equal(boundThread, executedThread);
     }
 
     [Fact]
@@ -78,7 +84,7 @@ public sealed class AgentCoreTests
         var task = executor.Enqueue(() => 42, cts.Token);
         cts.Cancel();
         executor.DrainOne();
-        Assert.ThrowsAny<OperationCanceledException>(() => task.GetAwaiter().GetResult());
+        Assert.True(task.IsCanceled);
     }
 
     [Fact]
@@ -101,6 +107,13 @@ public sealed class AgentCoreTests
         Assert.Equal(payload, FrameCodec.Decode(frame));
         Array.Resize(ref frame, frame.Length - 1);
         Assert.Throws<InvalidDataException>(() => FrameCodec.Decode(frame));
+    }
+
+    [Fact]
+    public void FrameCodec_matches_cross_language_ping_golden()
+    {
+        var frame = FrameCodec.Encode(Encoding.UTF8.GetBytes("ping"));
+        Assert.Equal("0400000070696E67", Convert.ToHexString(frame));
     }
 
     [Fact]
