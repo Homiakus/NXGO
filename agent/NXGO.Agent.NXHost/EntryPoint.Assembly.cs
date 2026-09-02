@@ -22,7 +22,6 @@ public static partial class EntryPoint
         CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "assembly_part_ref", "Part");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
         var partPath = GetString(payload, "part_path", string.Empty);
         if (string.IsNullOrWhiteSpace(partPath))
         {
@@ -57,6 +56,7 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
             Journal.MarkStarted(requestId);
 
             PartLoadStatus loadStatus;
@@ -95,16 +95,12 @@ public static partial class EntryPoint
     {
         var partHandle = RequireHandle(payload, "assembly_part_ref", "Part");
         var componentHandle = RequireHandle(payload, "component_ref", "Component");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
-        var component = (Component)Registry.Resolve(componentHandle, "Component");
-        if (component.OwningPart != null && component.OwningPart != part)
-        {
-            throw new StaleObjectHandleException("component handle does not belong to the supplied assembly part");
-        }
 
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            var component = (Component)Registry.ResolveOwned(componentHandle, partHandle, "Component");
             Journal.MarkStarted(requestId);
             part.ComponentAssembly.RemoveComponent(component);
             Registry.ReleaseWithDependents(componentHandle);
@@ -122,11 +118,11 @@ public static partial class EntryPoint
         CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "assembly_part_ref", "Part");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
 
         return MapRead(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
             var remaining = MaxAssemblySnapshotNodes;
             var root = part.ComponentAssembly != null ? part.ComponentAssembly.RootComponent : null;
             return FormatResponse(requestId, new Dictionary<string, object>
@@ -143,11 +139,11 @@ public static partial class EntryPoint
         CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "assembly_part_ref", "Part");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
 
         return MapRead(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
             var groups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             var remaining = MaxAssemblySnapshotNodes;
             var root = part.ComponentAssembly != null ? part.ComponentAssembly.RootComponent : null;
@@ -267,11 +263,11 @@ public static partial class EntryPoint
     {
         if (depth > MaxAssemblySnapshotDepth)
         {
-            throw new InvalidOperationException("assembly snapshot depth exceeds canonical safety limit");
+            throw new ArgumentException("assembly snapshot depth exceeds canonical safety limit");
         }
         if (remaining <= 0)
         {
-            throw new InvalidOperationException("assembly snapshot node count exceeds canonical safety limit");
+            throw new ArgumentException("assembly snapshot node count exceeds canonical safety limit");
         }
         remaining--;
     }

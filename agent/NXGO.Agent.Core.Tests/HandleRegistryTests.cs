@@ -151,6 +151,21 @@ public sealed class HandleRegistryTests
     }
 
     [Fact]
+    public void Resolve_owned_rejects_cross_owner_handles_without_touching_target()
+    {
+        var registry = new HandleRegistry<object>("session-a", 6, capacity: 8);
+        var ownerA = registry.Register(new object(), "Part");
+        var ownerB = registry.Register(new object(), "Part");
+        var target = new object();
+        var component = registry.Register(target, "Component", ownerObjectId: ownerA.ObjectId);
+
+        Assert.Same(target, registry.ResolveOwned(component, ownerA, "Component"));
+        Assert.Throws<StaleObjectHandleException>(() =>
+            registry.ResolveOwned(component, ownerB, "Component"));
+        Assert.NotNull(registry.Resolve(component, "Component"));
+    }
+
+    [Fact]
     public void Missing_generation_cannot_release_a_live_object()
     {
         var registry = new HandleRegistry<object>("session-a", 1);

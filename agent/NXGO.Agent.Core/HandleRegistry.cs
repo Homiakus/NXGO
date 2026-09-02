@@ -209,6 +209,36 @@ public sealed class HandleRegistry<T> where T : class
         }
     }
 
+    /// <summary>
+    /// Resolves a child only when its canonical registry owner matches the
+    /// supplied live owner handle. This lets hosts validate cross-object
+    /// relationships without touching native NX objects on transport threads.
+    /// </summary>
+    public T ResolveOwned(ObjectHandleToken token, ObjectHandleToken owner, params string[] expectedKinds)
+    {
+        if (token == null) throw new StaleObjectHandleException("object handle is null");
+        if (owner == null) throw new StaleObjectHandleException("owner handle is null");
+
+        lock (_sync)
+        {
+            ValidateIdentityLocked(owner);
+            ValidateIdentityLocked(token);
+            var entry = _entries[token.ObjectId];
+            if (!string.Equals(entry.OwnerObjectId, owner.ObjectId, StringComparison.Ordinal))
+            {
+                throw new StaleObjectHandleException(
+                    $"object {token.ObjectId} is not owned by {owner.ObjectId}");
+            }
+            if (expectedKinds != null && expectedKinds.Length > 0 &&
+                !expectedKinds.Any(k => string.Equals(k, entry.Token.Kind, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new StaleObjectHandleException(
+                    $"wrong object kind for {token.ObjectId}: got {entry.Token.Kind}, expected one of [{string.Join(", ", expectedKinds)}]");
+            }
+            return entry.Target;
+        }
+    }
+
     public bool Release(ObjectHandleToken token)
     {
         if (token == null) throw new StaleObjectHandleException("object handle is null");

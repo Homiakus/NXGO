@@ -187,6 +187,14 @@ public static partial class EntryPoint
                     return StartTransactionCommit(session, executor, requestId, requestPayload, token);
                 case "transaction.rollback":
                     return StartTransactionRollback(session, executor, requestId, requestPayload, token);
+                case "assembly.add_component":
+                    return StartAssemblyAddComponent(executor, requestId, requestPayload, token);
+                case "assembly.query_tree":
+                    return StartAssemblyQueryTree(executor, requestId, requestPayload, token);
+                case "assembly.query_bom":
+                    return StartAssemblyQueryBOM(executor, requestId, requestPayload, token);
+                case "assembly.remove_component":
+                    return StartAssemblyRemoveComponent(executor, requestId, requestPayload, token);
 
                 default:
                     return Task.FromResult(FormatError(requestId, "UNSUPPORTED_OPERATION", "canonical NXHost operation is not migrated yet: " + operation, false));
@@ -277,11 +285,11 @@ public static partial class EntryPoint
     private static Task<byte[]> StartPartSave(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var handle = RequireHandle(payload, "part_ref", "Part");
-        var part = (Part)Registry.Resolve(handle, "Part");
 
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(handle, "Part");
             Journal.MarkStarted(requestId);
             part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
             return FormatResponse(requestId, new Dictionary<string, object>
@@ -296,12 +304,12 @@ public static partial class EntryPoint
     private static Task<byte[]> StartPartClose(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var handle = RequireHandle(payload, "part_ref", "Part");
-        var part = (Part)Registry.Resolve(handle, "Part");
         var save = GetBool(payload, "save", false);
 
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(handle, "Part");
             Journal.MarkStarted(requestId);
             var name = part.Name;
             if (save)
@@ -321,11 +329,11 @@ public static partial class EntryPoint
     private static Task<byte[]> StartPartSummary(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var handle = RequireHandle(payload, "part_ref", "Part");
-        var part = (Part)Registry.Resolve(handle, "Part");
 
         return MapRead(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(handle, "Part");
             var bodyCount = 0;
             foreach (Body _ in part.Bodies) bodyCount++;
             var featureCount = 0;
@@ -359,6 +367,22 @@ public static partial class EntryPoint
         catch (TaskCanceledException ex)
         {
             return FormatError(requestId, "CANCELLED", ex.Message, true);
+        }
+        catch (ArgumentException ex)
+        {
+            return FormatError(requestId, "INVALID_ARGUMENT", ex.Message, false);
+        }
+        catch (HandleRegistryCapacityException ex)
+        {
+            return FormatError(requestId, "CAPACITY", ex.Message, true);
+        }
+        catch (HandleScopeCapacityException ex)
+        {
+            return FormatError(requestId, "CAPACITY", ex.Message, true);
+        }
+        catch (StaleObjectHandleException ex)
+        {
+            return FormatError(requestId, "INVALID_ARGUMENT", ex.Message, false);
         }
         catch (Exception ex)
         {
@@ -444,6 +468,8 @@ public static partial class EntryPoint
             case "transaction.begin":
             case "transaction.commit":
             case "transaction.rollback":
+            case "assembly.add_component":
+            case "assembly.remove_component":
                 return true;
             default:
                 return false;
@@ -485,6 +511,10 @@ public static partial class EntryPoint
                 "transaction.begin",
                 "transaction.commit",
                 "transaction.rollback",
+                "assembly.add_component",
+                "assembly.query_tree",
+                "assembly.query_bom",
+                "assembly.remove_component",
                 "shutdown",
             },
             ["max_payload_bytes"] = 4 * 1024 * 1024,
