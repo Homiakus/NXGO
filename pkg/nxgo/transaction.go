@@ -2,8 +2,6 @@ package nxgo
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
@@ -21,7 +19,7 @@ func (s *Session) BeginTx(ctx context.Context, name string) (*Transaction, error
 	}
 
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-txbegin-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("transaction.begin"),
 		Op:        "transaction.begin",
 		Payload:   reqData,
 	})
@@ -51,7 +49,7 @@ func (tx *Transaction) Commit(ctx context.Context) error {
 	}
 
 	resp, err := tx.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-txcommit-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("transaction.commit"),
 		Op:        "transaction.commit",
 		Payload:   reqData,
 	})
@@ -71,7 +69,7 @@ func (tx *Transaction) Rollback(ctx context.Context) error {
 	}
 
 	resp, err := tx.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-txrollback-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("transaction.rollback"),
 		Op:        "transaction.rollback",
 		Payload:   reqData,
 	})
