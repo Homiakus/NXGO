@@ -2,8 +2,6 @@ package nxgo
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
@@ -25,7 +23,7 @@ func (s *Session) NewPart(ctx context.Context, name, units string) (*Part, error
 	}
 
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-partnew-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("part.new"),
 		Op:        "part.new",
 		Payload:   reqData,
 	})
@@ -58,7 +56,7 @@ func (s *Session) OpenPart(ctx context.Context, filePath string) (*Part, error) 
 	}
 
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-partopen-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("part.open"),
 		Op:        "part.open",
 		Payload:   reqData,
 	})
@@ -91,7 +89,7 @@ func (p *Part) Save(ctx context.Context) (*protocol.PartSaveResponse, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-partsave-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("part.save"),
 		Op:        "part.save",
 		Payload:   reqData,
 	})
@@ -115,7 +113,7 @@ func (p *Part) Close(ctx context.Context, save bool) error {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-partclose-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("part.close"),
 		Op:        "part.close",
 		Payload:   reqData,
 	})
@@ -138,7 +136,7 @@ func (p *Part) Summary(ctx context.Context) (*protocol.PartSummaryResponse, erro
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-partsum-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("part.query_summary"),
 		Op:        "part.query_summary",
 		Payload:   reqData,
 	})
