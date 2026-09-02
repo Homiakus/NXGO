@@ -47,9 +47,35 @@ type WorkerProcess struct {
 	Manifest      *WorkerManifest
 	Client        *pipe.Client
 	cmd           *exec.Cmd
+	waitDone      <-chan error
 	mu            sync.Mutex
 	stopped       bool
 	quarantineErr error
+}
+
+// synchronizedBuffer is used by cmd.Stdout/Stderr and diagnostic readers on
+// different goroutines. bytes.Buffer alone is not safe for concurrent access.
+type synchronizedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *synchronizedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *synchronizedBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Len()
+}
+
+func (b *synchronizedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) {
@@ -98,7 +124,7 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		cmd.Env = append(cmd.Env, fmt.Sprintf("NXGO_AGENT_BIN=%s", cfg.AgentBin))
 	}
 
-	var outBuf bytes.Buffer
+	var outBuf synchronizedBuffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &outBuf
 
@@ -106,15 +132,26 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		return nil, fmt.Errorf("start run_journal: %w", err)
 	}
 
+	// Exactly one goroutine owns Cmd.Wait. This both reaps the child and gives
+	// startup/Stop/Kill a reliable process-exit signal; ProcessState polling
+	// before Wait cannot detect an early run_journal crash reliably.
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- cmd.Wait()
+		close(waitDone)
+	}()
+
 	wp := &WorkerProcess{
-		Config: cfg,
-		cmd:    cmd,
+		Config:   cfg,
+		cmd:      cmd,
+		waitDone: waitDone,
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, cfg.PipeName)
-	client, err := waitForPipe(ctx, pipePath, cfg.StartupTimeout, cmd, &outBuf)
+	client, err := waitForPipe(ctx, pipePath, cfg.StartupTimeout, waitDone)
 	if err != nil {
 		_ = cmd.Process.Kill()
+		_ = waitForWorkerExit(waitDone, 2*time.Second)
 		if outBuf.Len() > 0 {
 			return nil, fmt.Errorf("%w (output: %s)", err, outBuf.String())
 		}
@@ -211,33 +248,46 @@ func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath str
 	}
 }
 
-func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, cmd *exec.Cmd, outBuf *bytes.Buffer) (*pipe.Client, error) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, waitDone <-chan error) (*pipe.Client, error) {
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	probe := time.NewTicker(100 * time.Millisecond)
+	defer probe.Stop()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		default:
-		}
-
-		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-			if outBuf != nil && outBuf.Len() > 0 {
-				return nil, fmt.Errorf("%w: %s", ErrWorkerDied, outBuf.String())
+		case waitErr := <-waitDone:
+			if waitErr != nil {
+				return nil, fmt.Errorf("%w: %v", ErrWorkerDied, waitErr)
 			}
 			return nil, ErrWorkerDied
+		case <-deadline.C:
+			return nil, ErrWorkerStartTimeout
+		case <-probe.C:
+			dialCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+			conn, err := pipe.DialPipe(dialCtx, pipePath)
+			cancel()
+			if err == nil {
+				return pipe.NewClient(conn), nil
+			}
 		}
-
-		dialCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
-		conn, err := pipe.DialPipe(dialCtx, pipePath)
-		cancel()
-
-		if err == nil {
-			return pipe.NewClient(conn), nil
-		}
-
-		time.Sleep(100 * time.Millisecond)
 	}
-	return nil, ErrWorkerStartTimeout
+}
+
+func waitForWorkerExit(waitDone <-chan error, timeout time.Duration) error {
+	if waitDone == nil {
+		return nil
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case err := <-waitDone:
+		return err
+	case <-timer.C:
+		return context.DeadlineExceeded
+	}
 }
 
 // quarantine records the first terminal transport cause and destroys the
@@ -275,40 +325,65 @@ func (wp *WorkerProcess) QuarantineReason() error {
 
 func (wp *WorkerProcess) Stop(ctx context.Context) error {
 	wp.mu.Lock()
-	defer wp.mu.Unlock()
 	if wp.stopped {
+		wp.mu.Unlock()
 		return nil
 	}
 	wp.stopped = true
+	client := wp.Client
+	var process *os.Process
+	if wp.cmd != nil {
+		process = wp.cmd.Process
+	}
+	waitDone := wp.waitDone
+	wp.mu.Unlock()
 
-	if wp.Client != nil {
+	if client != nil {
 		callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		_, _ = wp.Client.Call(callCtx, &protocol.RequestEnvelope{
+		_, _ = client.Call(callCtx, &protocol.RequestEnvelope{
 			RequestID: "shutdown-req",
 			Op:        "shutdown",
 		})
 		cancel()
-		_ = wp.Client.Close()
+		_ = client.Close()
 	}
 
-	if wp.cmd != nil && wp.cmd.Process != nil {
-		_ = wp.cmd.Process.Kill()
-		_ = wp.cmd.Wait()
+	var killErr error
+	if process != nil {
+		killErr = process.Kill()
+		if errors.Is(killErr, os.ErrProcessDone) {
+			killErr = nil
+		}
 	}
-	return nil
+	_ = waitForWorkerExit(waitDone, 2*time.Second)
+	return killErr
 }
 
 func (wp *WorkerProcess) Kill() error {
 	wp.mu.Lock()
-	defer wp.mu.Unlock()
+	alreadyStopped := wp.stopped
 	wp.stopped = true
-	if wp.Client != nil {
-		_ = wp.Client.Close()
+	client := wp.Client
+	var process *os.Process
+	if wp.cmd != nil {
+		process = wp.cmd.Process
 	}
-	if wp.cmd != nil && wp.cmd.Process != nil {
-		return wp.cmd.Process.Kill()
+	waitDone := wp.waitDone
+	wp.mu.Unlock()
+
+	if client != nil {
+		_ = client.Close()
 	}
-	return nil
+	if alreadyStopped || process == nil {
+		return nil
+	}
+
+	err := process.Kill()
+	if errors.Is(err, os.ErrProcessDone) {
+		err = nil
+	}
+	_ = waitForWorkerExit(waitDone, 2*time.Second)
+	return err
 }
 
 func findRepoRoot() string {
