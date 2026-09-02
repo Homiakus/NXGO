@@ -66,6 +66,11 @@ func TestProductionAgentStrictHandleIdentity(t *testing.T) {
 		"reference is missing kind",
 		"wrong object kind",
 		"object kind/type mismatch",
+		"reference is missing generation",
+		"stale object generation",
+		"new ObjectRegistry(_sessionId, 1, 4096)",
+		"object registry capacity reached",
+		"HighWatermark",
 	} {
 		if !strings.Contains(src, marker) {
 			t.Errorf("strict handle identity guard missing: %q", marker)

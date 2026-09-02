@@ -238,32 +238,51 @@ public sealed class RegisteredObject
     public string Kind { get; set; }
     public string LeaseScopeId { get; set; }
     public uint NativeTag { get; set; }
+    public uint Generation { get; set; }
     public DateTime RegisteredAt { get; set; }
 }
 
 public sealed class ObjectRegistry
 {
     private readonly string _sessionId;
+    private readonly int _capacity;
     private ulong _epoch;
     private long _handleCounter;
+    private long _generationCounter;
+    private int _highWatermark;
     private readonly Dictionary<string, RegisteredObject> _objects = new Dictionary<string, RegisteredObject>();
     private readonly object _lock = new object();
 
-    public ObjectRegistry(string sessionId, ulong epoch)
+    public ObjectRegistry(string sessionId, ulong epoch, int capacity)
     {
+        if (capacity <= 0) throw new ArgumentOutOfRangeException("capacity");
         _sessionId = sessionId;
         _epoch = epoch;
+        _capacity = capacity;
     }
 
     public ulong Epoch { get { return _epoch; } }
     public string SessionId { get { return _sessionId; } }
+    public int Capacity { get { return _capacity; } }
+    public int Count { get { lock (_lock) return _objects.Count; } }
+    public int HighWatermark { get { lock (_lock) return _highWatermark; } }
 
     public string Register(TaggedObject obj, string kind, string leaseScopeId, out uint nativeTag)
     {
         if (obj == null) throw new ArgumentNullException("obj");
         lock (_lock)
         {
+            if (_objects.Count >= _capacity)
+            {
+                throw new InvalidOperationException("object registry capacity reached; release handles or recycle worker");
+            }
             var id = "obj-" + Interlocked.Increment(ref _handleCounter);
+            var generationValue = Interlocked.Increment(ref _generationCounter);
+            if (generationValue <= 0 || generationValue > uint.MaxValue)
+            {
+                throw new InvalidOperationException("object generation space exhausted; recycle worker");
+            }
+            uint generation = (uint)generationValue;
             nativeTag = 0;
             try
             {
@@ -277,21 +296,31 @@ public sealed class ObjectRegistry
                 Kind = kind ?? "TaggedObject",
                 LeaseScopeId = leaseScopeId ?? "",
                 NativeTag = nativeTag,
+                Generation = generation,
                 RegisteredAt = DateTime.UtcNow
             };
+            if (_objects.Count > _highWatermark) _highWatermark = _objects.Count;
             return id;
         }
     }
 
     public string FormatHandleJson(string objectId, string kind, uint nativeTag, string leaseScopeId)
     {
-        return string.Format(
-            "{{\"session_id\":\"{0}\",\"epoch\":{1},\"object_id\":\"{2}\",\"kind\":\"{3}\",\"native_tag\":{4},\"lease_scope_id\":\"{5}\"}}",
-            _sessionId, _epoch, objectId, kind, nativeTag, leaseScopeId ?? ""
-        );
+        lock (_lock)
+        {
+            RegisteredObject reg;
+            if (!_objects.TryGetValue(objectId, out reg))
+            {
+                throw new KeyNotFoundException("cannot format released/unknown object handle: " + objectId);
+            }
+            return string.Format(
+                "{{\"session_id\":\"{0}\",\"epoch\":{1},\"object_id\":\"{2}\",\"generation\":{3},\"kind\":\"{4}\",\"native_tag\":{5},\"lease_scope_id\":\"{6}\"}}",
+                _sessionId, _epoch, objectId, reg.Generation, kind, nativeTag, leaseScopeId ?? ""
+            );
+        }
     }
 
-    public T Resolve<T>(string objectId, ulong epoch, string sessionId) where T : TaggedObject
+    public T Resolve<T>(string objectId, ulong epoch, string sessionId, uint generation) where T : TaggedObject
     {
         if (sessionId != _sessionId)
         {
@@ -301,6 +330,10 @@ public sealed class ObjectRegistry
         {
             throw new InvalidOperationException(string.Format("stale epoch reference: got {0}, expected {1}", epoch, _epoch));
         }
+        if (generation == 0)
+        {
+            throw new InvalidOperationException("object reference generation must be non-zero");
+        }
 
         lock (_lock)
         {
@@ -308,6 +341,10 @@ public sealed class ObjectRegistry
             if (!_objects.TryGetValue(objectId, out reg))
             {
                 throw new KeyNotFoundException("object handle not found or expired: " + objectId);
+            }
+            if (reg.Generation != generation)
+            {
+                throw new InvalidOperationException(string.Format("stale object generation for {0}: got {1}, expected {2}", objectId, generation, reg.Generation));
             }
             if (reg.Target == null)
             {
@@ -773,7 +810,7 @@ public class Program
     private static readonly SessionHealthState Health = new SessionHealthState();
     private static volatile bool _shutdownRequested;
     private static readonly string _sessionId = "nx-sess-" + Guid.NewGuid().ToString("N");
-    private static readonly ObjectRegistry Registry = new ObjectRegistry(_sessionId, 1);
+    private static readonly ObjectRegistry Registry = new ObjectRegistry(_sessionId, 1, 4096);
     private static readonly TransactionManager Transactions = new TransactionManager();
     private static readonly MutationJournal Journal = new MutationJournal(4096);
 
@@ -1530,6 +1567,7 @@ public class Program
         if (string.IsNullOrEmpty(objectId)) throw new InvalidOperationException(expectedKind + " reference is missing object_id");
         if (string.IsNullOrEmpty(sessionId)) throw new InvalidOperationException(expectedKind + " reference is missing session_id");
         if (!HasJsonKey(handleJson, "epoch")) throw new InvalidOperationException(expectedKind + " reference is missing epoch");
+        if (!HasJsonKey(handleJson, "generation")) throw new InvalidOperationException(expectedKind + " reference is missing generation");
         if (string.IsNullOrEmpty(kind)) throw new InvalidOperationException(expectedKind + " reference is missing kind");
         if (!string.Equals(kind, expectedKind, StringComparison.OrdinalIgnoreCase))
         {
@@ -1537,7 +1575,9 @@ public class Program
         }
 
         ulong epoch = ExtractJsonUlong(handleJson, "epoch", 0);
-        return Registry.Resolve<T>(objectId, epoch, sessionId);
+        ulong generationValue = ExtractJsonUlong(handleJson, "generation", 0);
+        if (generationValue == 0 || generationValue > uint.MaxValue) throw new InvalidOperationException(expectedKind + " reference has invalid generation");
+        return Registry.Resolve<T>(objectId, epoch, sessionId, (uint)generationValue);
     }
 
     private static Part ResolvePartFromPayload(Session session, string payloadJson)

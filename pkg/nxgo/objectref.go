@@ -36,6 +36,9 @@ func (s *Session) validateObjectHandle(ref *protocol.ObjectHandleWire, expectedK
 			s.epoch,
 		)
 	}
+	if ref.Generation == 0 {
+		return fmt.Errorf("%w: object %q has missing/zero generation", ErrStaleObjectRef, ref.ObjectID)
+	}
 
 	if len(expectedKinds) == 0 {
 		return nil

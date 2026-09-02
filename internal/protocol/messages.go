@@ -149,6 +149,7 @@ type ObjectHandleWire struct {
 	SessionID    string `json:"session_id"`
 	Epoch        uint64 `json:"epoch"`
 	ObjectID     string `json:"object_id"`
+	Generation   uint32 `json:"generation"`
 	Kind         string `json:"kind"`
 	NativeTag    uint32 `json:"native_tag,omitempty"`
 	LeaseScopeID string `json:"lease_scope_id,omitempty"`

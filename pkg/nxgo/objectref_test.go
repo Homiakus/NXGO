@@ -23,6 +23,7 @@ func TestStalePartHandleFailsBeforeAnyTransportWrite(t *testing.T) {
 			SessionID: "session-old",
 			Epoch:     7,
 			ObjectID:  "obj-part-1",
+			Generation: 1,
 			Kind:      "Part",
 		},
 	}
@@ -46,6 +47,7 @@ func TestStaleEpochFailsBeforeAnyTransportWrite(t *testing.T) {
 			SessionID: "session-current",
 			Epoch:     7,
 			ObjectID:  "obj-part-1",
+			Generation: 1,
 			Kind:      "Part",
 		},
 	}
@@ -69,6 +71,7 @@ func TestWrongObjectKindFailsBeforeAnyTransportWrite(t *testing.T) {
 			SessionID: "session-current",
 			Epoch:     1,
 			ObjectID:  "obj-body-not-part",
+			Generation: 1,
 			Kind:      "Body",
 		},
 	}
@@ -92,6 +95,7 @@ func TestUnsupportedBooleanFeatureOptionFailsBeforeAnyTransportWrite(t *testing.
 			SessionID: "session-current",
 			Epoch:     1,
 			ObjectID:  "obj-part-1",
+			Generation: 1,
 			Kind:      "Part",
 		},
 	}
@@ -120,6 +124,7 @@ func TestTargetBodyIsRejectedUntilBackendActuallyHonorsIt(t *testing.T) {
 			SessionID: "session-current",
 			Epoch:     1,
 			ObjectID:  "obj-part-1",
+			Generation: 1,
 			Kind:      "Part",
 		},
 	}
@@ -127,6 +132,7 @@ func TestTargetBodyIsRejectedUntilBackendActuallyHonorsIt(t *testing.T) {
 		SessionID: "session-current",
 		Epoch:     1,
 		ObjectID:  "obj-body-1",
+		Generation: 1,
 		Kind:      "Body",
 	}
 
@@ -152,6 +158,7 @@ func TestReleaseObjectsRejectsForeignHandleBeforeTransport(t *testing.T) {
 		SessionID: "foreign-session",
 		Epoch:     1,
 		ObjectID:  "obj-1",
+		Generation: 1,
 		Kind:      "Body",
 	})
 	if err == nil || !errors.Is(err, ErrStaleObjectRef) {
