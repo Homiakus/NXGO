@@ -16,9 +16,9 @@ import (
 // TestRealNXCanonicalCompiledHost proves the H4 migration lane end-to-end:
 // run_journal -> minimal CompiledHostBootstrap.cs -> NXGO.Agent.NXHost.dll ->
 // NXGO.Agent.Core.dll -> shared NxExecutor/RequestJournal/HandleRegistry on the
-// NX execution thread. It also runs geometry, transaction and object-lifetime
-// oracles through the canonical adapters. E3 is only earned when this fixture
-// is actually executed on the self-hosted Siemens NX runner.
+// NX execution thread. It runs geometry, transaction, lifetime and Assembly
+// oracles through canonical adapters. E3 is earned only when this fixture is
+// actually executed on the self-hosted Siemens NX runner.
 func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("canonical compiled NXHost requires Windows/Siemens NX")
@@ -66,7 +66,7 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		t.Fatalf("compiled-host bootstrap missing: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 
 	worker, err := supervisor.StartWorker(ctx, supervisor.WorkerConfig{
@@ -181,9 +181,6 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 			t.Fatalf("canonical body %d is incomplete: %+v", i, body)
 		}
 	}
-	// Part.Bodies exposes explicit request-scoped handles, so callers own them.
-	// This exercises canonical object.release while the persistent Feature/Body
-	// handles returned by Create* remain alive for the part-close cascade oracle.
 	if err := session.ReleaseObjects(ctx, bodies[0].Ref, bodies[1].Ref); err != nil {
 		t.Fatalf("canonical object.release failed: %v", err)
 	}
@@ -196,8 +193,6 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		t.Fatalf("canonical geometry summary mismatch: bodies=%d features=%d", summary.BodyCount, summary.FeatureCount)
 	}
 
-	// Transaction rollback oracle: create geometry after a visible undo mark,
-	// then prove that rollback restores the semantic body count.
 	rollbackTx, err := session.BeginTx(ctx, "canonical_rollback")
 	if err != nil {
 		t.Fatalf("canonical transaction.begin for rollback failed: %v", err)
@@ -232,7 +227,6 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		t.Fatalf("canonical rollback did not restore body count: got %d want 2", summaryAfterRollback.BodyCount)
 	}
 
-	// Transaction commit oracle: committed geometry must survive save/reopen.
 	commitTx, err := session.BeginTx(ctx, "canonical_commit")
 	if err != nil {
 		t.Fatalf("canonical transaction.begin for commit failed: %v", err)
@@ -271,9 +265,6 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if _, err := part.Summary(ctx); err == nil {
 		t.Fatal("released canonical Part handle unexpectedly remained resolvable after close")
 	}
-	// Persistent Feature/Body handles are owned by the Part. A successful native
-	// close must recursively invalidate them; object.release is a convenient
-	// observable proof that the dependent handle no longer resolves.
 	if err := session.ReleaseObjects(ctx, block.Ref); err == nil {
 		t.Fatal("dependent Feature handle unexpectedly remained live after owning Part close")
 	}
@@ -305,13 +296,123 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		t.Fatalf("canonical reopened part close failed: %v", err)
 	}
 
+	// Assembly oracle. Query tree/BOM must be value snapshots (no operational
+	// handles), while AddComponent returns persistent handles owned by the
+	// assembly Part and Remove consumes exactly that identity.
+	assemblyDir := t.TempDir()
+	childPath := filepath.Join(assemblyDir, "canonical_child.prt")
+	child, err := session.NewPart(ctx, childPath, "mm")
+	if err != nil {
+		t.Fatalf("canonical child part.new failed: %v", err)
+	}
+	if _, err := child.CreateBlock(ctx, nxgo.BlockParams{
+		Origin: nxgo.Point3D{0, 0, 0},
+		Length: 10,
+		Width:  10,
+		Height: 5,
+	}); err != nil {
+		t.Fatalf("canonical child geometry failed: %v", err)
+	}
+	if _, err := child.Save(ctx); err != nil {
+		t.Fatalf("canonical child save failed: %v", err)
+	}
+	if err := child.Close(ctx, false); err != nil {
+		t.Fatalf("canonical child close failed: %v", err)
+	}
+
+	assemblyPath := filepath.Join(assemblyDir, "canonical_assembly.prt")
+	assemblyPart, err := session.NewPart(ctx, assemblyPath, "mm")
+	if err != nil {
+		t.Fatalf("canonical assembly part.new failed: %v", err)
+	}
+	componentA, err := assemblyPart.AddComponent(ctx, nxgo.AddComponentParams{
+		PartPath:      childPath,
+		ComponentName: "CHILD_A",
+		Origin:        nxgo.Point3D{0, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("canonical assembly.add_component A failed: %v", err)
+	}
+	componentB, err := assemblyPart.AddComponent(ctx, nxgo.AddComponentParams{
+		PartPath:      childPath,
+		ComponentName: "CHILD_B",
+		Origin:        nxgo.Point3D{20, 0, 0},
+	})
+	if err != nil {
+		t.Fatalf("canonical assembly.add_component B failed: %v", err)
+	}
+	if componentA.Ref.Generation == 0 || componentB.Ref.Generation == 0 {
+		t.Fatalf("canonical persistent Component handles require generation: A=%+v B=%+v", componentA.Ref, componentB.Ref)
+	}
+
+	tree, err := assemblyPart.ComponentTree(ctx)
+	if err != nil {
+		t.Fatalf("canonical assembly.query_tree failed: %v", err)
+	}
+	if len(tree.Children) != 2 {
+		t.Fatalf("canonical assembly tree expected 2 children, got %d", len(tree.Children))
+	}
+	for i, node := range tree.Children {
+		if node.Ref.ObjectID != "" || node.Ref.Generation != 0 {
+			t.Fatalf("assembly snapshot child %d unexpectedly carries operational handle: %+v", i, node.Ref)
+		}
+		if node.PrototypePath == "" {
+			t.Fatalf("assembly snapshot child %d has empty prototype path", i)
+		}
+	}
+
+	bom, err := assemblyPart.BOM(ctx)
+	if err != nil {
+		t.Fatalf("canonical assembly.query_bom failed: %v", err)
+	}
+	if len(bom) != 1 || bom[0].Quantity != 2 {
+		t.Fatalf("canonical BOM expected one child part with quantity 2, got %+v", bom)
+	}
+
+	if err := componentB.Remove(ctx); err != nil {
+		t.Fatalf("canonical assembly.remove_component failed: %v", err)
+	}
+	if err := session.ReleaseObjects(ctx, componentB.Ref); err == nil {
+		t.Fatal("removed Component handle unexpectedly remained live")
+	}
+	treeAfterRemove, err := assemblyPart.ComponentTree(ctx)
+	if err != nil {
+		t.Fatalf("canonical tree after component removal failed: %v", err)
+	}
+	if len(treeAfterRemove.Children) != 1 {
+		t.Fatalf("canonical assembly tree expected 1 child after removal, got %d", len(treeAfterRemove.Children))
+	}
+
+	if _, err := assemblyPart.Save(ctx); err != nil {
+		t.Fatalf("canonical assembly save failed: %v", err)
+	}
+	if err := assemblyPart.Close(ctx, false); err != nil {
+		t.Fatalf("canonical assembly close failed: %v", err)
+	}
+	if err := session.ReleaseObjects(ctx, componentA.Ref); err == nil {
+		t.Fatal("Component handle unexpectedly survived owning assembly Part close")
+	}
+
+	reopenedAssembly, err := session.OpenPart(ctx, assemblyPath)
+	if err != nil {
+		t.Fatalf("canonical assembly reopen failed: %v", err)
+	}
+	reopenedTree, err := reopenedAssembly.ComponentTree(ctx)
+	if err != nil {
+		t.Fatalf("canonical reopened assembly tree failed: %v", err)
+	}
+	if len(reopenedTree.Children) != 1 {
+		t.Fatalf("canonical reopened assembly expected 1 persisted child, got %d", len(reopenedTree.Children))
+	}
+	if err := reopenedAssembly.Close(ctx, false); err != nil {
+		t.Fatalf("canonical reopened assembly close failed: %v", err)
+	}
+
 	if err := worker.Stop(ctx); err != nil {
 		t.Fatalf("canonical compiled NXHost shutdown failed: %v", err)
 	}
-	t.Logf("canonical Core->NXHost geometry+transactions verified: session=%s thread=%d release=%s volume=%.1f area=%.1f bbox=%+v first_handle=%s/%d reopened_handle=%s/%d",
-		info.SessionID, info.ThreadID, info.Release, mp.Volume, mp.Area, bbox.Dimensions,
-		part.Ref.ObjectID, part.Ref.Generation,
-		reopened.Ref.ObjectID, reopened.Ref.Generation)
+	t.Logf("canonical Core->NXHost geometry+transactions+assembly verified: session=%s thread=%d release=%s volume=%.1f area=%.1f bbox=%+v assembly_children=%d",
+		info.SessionID, info.ThreadID, info.Release, mp.Volume, mp.Area, bbox.Dimensions, len(reopenedTree.Children))
 }
 
 func repoRootFromTestFile(t *testing.T) string {
