@@ -88,6 +88,84 @@ public sealed class AgentCoreTests
     }
 
     [Fact]
+    public void Tracked_execution_cancelled_before_start_never_runs_operation()
+    {
+        var executor = new NxExecutor();
+        executor.BindToCurrentThread();
+        var executions = 0;
+
+        var tracked = executor.EnqueueTracked(() =>
+        {
+            executions++;
+            return 42;
+        });
+
+        Assert.Equal(NxExecutionState.Queued, tracked.State);
+        Assert.True(tracked.TryCancelBeforeStart());
+        Assert.Equal(NxExecutionState.CancelledBeforeStart, tracked.State);
+
+        // The cancelled item may remain as a queue tombstone, but draining it
+        // must never enter user/NX code.
+        Assert.True(executor.DrainOne());
+        Assert.Equal(0, executions);
+        Assert.True(tracked.Task.IsCanceled);
+        Assert.Equal(NxExecutionState.CancelledBeforeStart, tracked.State);
+    }
+
+    [Fact]
+    public void Tracked_execution_cannot_be_cancelled_as_not_started_after_start()
+    {
+        var executor = new NxExecutor();
+        using var bound = new ManualResetEventSlim(false);
+        using var startDrain = new ManualResetEventSlim(false);
+        using var enteredOperation = new ManualResetEventSlim(false);
+        using var releaseOperation = new ManualResetEventSlim(false);
+
+        var nxThread = new Thread(() =>
+        {
+            executor.BindToCurrentThread();
+            bound.Set();
+            Assert.True(startDrain.Wait(TimeSpan.FromSeconds(5)));
+            executor.DrainOne();
+        });
+        nxThread.Start();
+        Assert.True(bound.Wait(TimeSpan.FromSeconds(5)));
+
+        var tracked = executor.EnqueueTracked(() =>
+        {
+            enteredOperation.Set();
+            Assert.True(releaseOperation.Wait(TimeSpan.FromSeconds(5)));
+            return 99;
+        });
+
+        startDrain.Set();
+        Assert.True(enteredOperation.Wait(TimeSpan.FromSeconds(5)));
+        Assert.Equal(NxExecutionState.Started, tracked.State);
+        Assert.False(tracked.TryCancelBeforeStart());
+        Assert.Equal(NxExecutionState.Started, tracked.State);
+
+        releaseOperation.Set();
+        nxThread.Join(TimeSpan.FromSeconds(5));
+        Assert.False(nxThread.IsAlive);
+        Assert.True(tracked.Task.IsCompletedSuccessfully);
+        Assert.Equal(99, tracked.Task.GetAwaiter().GetResult());
+        Assert.Equal(NxExecutionState.Completed, tracked.State);
+    }
+
+    [Fact]
+    public void Tracked_execution_fault_is_distinct_from_cancellation()
+    {
+        var executor = new NxExecutor();
+        executor.BindToCurrentThread();
+        var tracked = executor.EnqueueTracked<int>(() => throw new InvalidOperationException("NX failure"));
+
+        Assert.True(executor.DrainOne());
+        Assert.Equal(NxExecutionState.Faulted, tracked.State);
+        Assert.True(tracked.Task.IsFaulted);
+        Assert.IsType<InvalidOperationException>(tracked.Task.Exception!.InnerException);
+    }
+
+    [Fact]
     public void SessionHealth_terminal_states_are_not_reusable()
     {
         var health = new SessionHealthState();
