@@ -16,9 +16,9 @@ import (
 // TestRealNXCanonicalCompiledHost proves the H4 migration lane end-to-end:
 // run_journal -> minimal CompiledHostBootstrap.cs -> NXGO.Agent.NXHost.dll ->
 // NXGO.Agent.Core.dll -> shared NxExecutor/RequestJournal/HandleRegistry on the
-// NX execution thread. It also runs a geometric oracle through the canonical
-// adapter so E3 can prove units and BuilderScope behavior when the self-hosted
-// Siemens NX runner is actually executed.
+// NX execution thread. It also runs geometry, transaction and object-lifetime
+// oracles through the canonical adapters. E3 is only earned when this fixture
+// is actually executed on the self-hosted Siemens NX runner.
 func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("canonical compiled NXHost requires Windows/Siemens NX")
@@ -66,7 +66,7 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		t.Fatalf("compiled-host bootstrap missing: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
 	worker, err := supervisor.StartWorker(ctx, supervisor.WorkerConfig{
@@ -181,8 +181,9 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 			t.Fatalf("canonical body %d is incomplete: %+v", i, body)
 		}
 	}
-	// Part.Bodies exposes explicit handles, so callers own them. This also
-	// exercises canonical object.release and prevents fixture-induced leaks.
+	// Part.Bodies exposes explicit request-scoped handles, so callers own them.
+	// This exercises canonical object.release while the persistent Feature/Body
+	// handles returned by Create* remain alive for the part-close cascade oracle.
 	if err := session.ReleaseObjects(ctx, bodies[0].Ref, bodies[1].Ref); err != nil {
 		t.Fatalf("canonical object.release failed: %v", err)
 	}
@@ -195,8 +196,65 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		t.Fatalf("canonical geometry summary mismatch: bodies=%d features=%d", summary.BodyCount, summary.FeatureCount)
 	}
 
-	if err := session.ReleaseObjects(ctx, block.Ref, block.BodyRef, cylinder.Ref, cylinder.BodyRef); err != nil {
-		t.Fatalf("canonical feature/body handle cleanup failed: %v", err)
+	// Transaction rollback oracle: create geometry after a visible undo mark,
+	// then prove that rollback restores the semantic body count.
+	rollbackTx, err := session.BeginTx(ctx, "canonical_rollback")
+	if err != nil {
+		t.Fatalf("canonical transaction.begin for rollback failed: %v", err)
+	}
+	rolledBackFeature, err := part.CreateBlock(ctx, nxgo.BlockParams{
+		Origin: nxgo.Point3D{0, 100, 0},
+		Length: 10,
+		Width:  10,
+		Height: 10,
+	})
+	if err != nil {
+		t.Fatalf("canonical CreateBlock inside rollback transaction failed: %v", err)
+	}
+	if rolledBackFeature.Ref.Generation == 0 {
+		t.Fatal("rollback candidate feature is missing generation")
+	}
+	summaryDuringRollback, err := part.Summary(ctx)
+	if err != nil {
+		t.Fatalf("canonical summary before rollback failed: %v", err)
+	}
+	if summaryDuringRollback.BodyCount != 3 {
+		t.Fatalf("canonical rollback precondition mismatch: bodies=%d want 3", summaryDuringRollback.BodyCount)
+	}
+	if err := rollbackTx.Rollback(ctx); err != nil {
+		t.Fatalf("canonical transaction.rollback failed: %v", err)
+	}
+	summaryAfterRollback, err := part.Summary(ctx)
+	if err != nil {
+		t.Fatalf("canonical summary after rollback failed: %v", err)
+	}
+	if summaryAfterRollback.BodyCount != 2 {
+		t.Fatalf("canonical rollback did not restore body count: got %d want 2", summaryAfterRollback.BodyCount)
+	}
+
+	// Transaction commit oracle: committed geometry must survive save/reopen.
+	commitTx, err := session.BeginTx(ctx, "canonical_commit")
+	if err != nil {
+		t.Fatalf("canonical transaction.begin for commit failed: %v", err)
+	}
+	committedFeature, err := part.CreateBlock(ctx, nxgo.BlockParams{
+		Origin: nxgo.Point3D{0, 200, 0},
+		Length: 8,
+		Width:  8,
+		Height: 8,
+	})
+	if err != nil {
+		t.Fatalf("canonical CreateBlock inside commit transaction failed: %v", err)
+	}
+	if err := commitTx.Commit(ctx); err != nil {
+		t.Fatalf("canonical transaction.commit failed: %v", err)
+	}
+	summaryAfterCommit, err := part.Summary(ctx)
+	if err != nil {
+		t.Fatalf("canonical summary after commit failed: %v", err)
+	}
+	if summaryAfterCommit.BodyCount != 3 {
+		t.Fatalf("canonical commit did not preserve body count: got %d want 3", summaryAfterCommit.BodyCount)
 	}
 
 	saved, err := part.Save(ctx)
@@ -213,6 +271,21 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if _, err := part.Summary(ctx); err == nil {
 		t.Fatal("released canonical Part handle unexpectedly remained resolvable after close")
 	}
+	// Persistent Feature/Body handles are owned by the Part. A successful native
+	// close must recursively invalidate them; object.release is a convenient
+	// observable proof that the dependent handle no longer resolves.
+	if err := session.ReleaseObjects(ctx, block.Ref); err == nil {
+		t.Fatal("dependent Feature handle unexpectedly remained live after owning Part close")
+	}
+	if err := session.ReleaseObjects(ctx, cylinder.BodyRef); err == nil {
+		t.Fatal("dependent Body handle unexpectedly remained live after owning Part close")
+	}
+	if err := session.ReleaseObjects(ctx, rolledBackFeature.Ref); err == nil {
+		t.Fatal("rolled-back Feature handle unexpectedly remained live after owning Part close")
+	}
+	if err := session.ReleaseObjects(ctx, committedFeature.Ref); err == nil {
+		t.Fatal("committed Feature handle unexpectedly remained live after owning Part close")
+	}
 
 	reopened, err := session.OpenPart(ctx, partPath)
 	if err != nil {
@@ -225,8 +298,8 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonical reopened part summary failed: %v", err)
 	}
-	if reopenedSummary.BodyCount != 2 {
-		t.Fatalf("canonical reopened part lost geometry: bodies=%d want 2", reopenedSummary.BodyCount)
+	if reopenedSummary.BodyCount != 3 {
+		t.Fatalf("canonical reopened part lost committed geometry: bodies=%d want 3", reopenedSummary.BodyCount)
 	}
 	if err := reopened.Close(ctx, false); err != nil {
 		t.Fatalf("canonical reopened part close failed: %v", err)
@@ -235,7 +308,7 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if err := worker.Stop(ctx); err != nil {
 		t.Fatalf("canonical compiled NXHost shutdown failed: %v", err)
 	}
-	t.Logf("canonical Core->NXHost geometry verified: session=%s thread=%d release=%s volume=%.1f area=%.1f bbox=%+v first_handle=%s/%d reopened_handle=%s/%d",
+	t.Logf("canonical Core->NXHost geometry+transactions verified: session=%s thread=%d release=%s volume=%.1f area=%.1f bbox=%+v first_handle=%s/%d reopened_handle=%s/%d",
 		info.SessionID, info.ThreadID, info.Release, mp.Volume, mp.Area, bbox.Dimensions,
 		part.Ref.ObjectID, part.Ref.Generation,
 		reopened.Ref.ObjectID, reopened.Ref.Generation)
