@@ -13,6 +13,8 @@ import (
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
 
+const DefaultMaxPendingRequests = 128
+
 var (
 	ErrNotConnected      = errors.New("transport is not connected")
 	ErrClosed            = errors.New("transport closed")
@@ -21,6 +23,7 @@ var (
 	ErrOutcomeUnknown    = errors.New("request outcome is unknown; connection quarantined")
 	ErrProtocolViolation = errors.New("transport protocol violation")
 	ErrDuplicateRequest  = errors.New("duplicate in-flight request id")
+	ErrTooManyPending    = errors.New("too many in-flight requests")
 )
 
 type FramedConn struct {
@@ -160,6 +163,7 @@ type Client struct {
 	epoch          uint64
 	serverInfo     *protocol.HandshakeResponse
 	pending        map[string]chan callResult
+	maxPending     int
 	readerStarted  bool
 	closed         bool
 	quarantined    bool
@@ -169,8 +173,9 @@ type Client struct {
 
 func NewClient(rwc io.ReadWriteCloser) *Client {
 	return &Client{
-		conn:    NewFramedConn(rwc, protocol.DefaultMaxPayloadBytes),
-		pending: make(map[string]chan callResult),
+		conn:       NewFramedConn(rwc, protocol.DefaultMaxPayloadBytes),
+		pending:    make(map[string]chan callResult),
+		maxPending: DefaultMaxPendingRequests,
 	}
 }
 
@@ -341,6 +346,12 @@ func (c *Client) registerPending(requestID string, ch chan callResult) (bool, er
 	}
 	if _, exists := c.pending[requestID]; exists {
 		return false, fmt.Errorf("%w: %s", ErrDuplicateRequest, requestID)
+	}
+	if c.maxPending <= 0 {
+		c.maxPending = DefaultMaxPendingRequests
+	}
+	if len(c.pending) >= c.maxPending {
+		return false, fmt.Errorf("%w: %d >= %d", ErrTooManyPending, len(c.pending), c.maxPending)
 	}
 
 	startReader := !c.readerStarted
