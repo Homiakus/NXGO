@@ -36,6 +36,7 @@ type WorkerProcess struct {
 	cmd      *exec.Cmd
 	mu       sync.Mutex
 	stopped  bool
+	quarantineErr error
 }
 
 func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) {
@@ -102,7 +103,16 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	}
 	wp.Client = client
 
-	// Perform handshake
+	// Any ambiguous transport outcome or protocol-corruption event makes the
+	// NX process unsafe to reuse. Killing the owning worker is intentionally
+	// aggressive: a request that timed out after send may still be queued or
+	// running inside NX, so keeping the process alive could allow a late CAD
+	// mutation to commit after the caller already observed failure.
+	client.SetQuarantineHook(func(cause error) {
+		wp.quarantine(cause)
+	})
+
+	// Perform handshake.
 	hsResp, err := client.Handshake(ctx, &protocol.HandshakeRequest{
 		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
 		SDKVersion:      "v0.1.0",
@@ -138,7 +148,6 @@ func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, cm
 		default:
 		}
 
-		// Check if process exited unexpectedly
 		if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
 			if outBuf != nil && outBuf.Len() > 0 {
 				return nil, fmt.Errorf("%w: %s", ErrWorkerDied, outBuf.String())
@@ -157,6 +166,39 @@ func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, cm
 		time.Sleep(100 * time.Millisecond)
 	}
 	return nil, ErrWorkerStartTimeout
+}
+
+// quarantine records the first terminal transport cause and destroys the
+// process that owns the corresponding NX session. It is called asynchronously
+// by pipe.Client so it must be safe to race with Stop/Kill.
+func (wp *WorkerProcess) quarantine(cause error) {
+	wp.mu.Lock()
+	if wp.quarantineErr == nil {
+		wp.quarantineErr = cause
+	}
+	alreadyStopped := wp.stopped
+	wp.stopped = true
+	client := wp.Client
+	var process *os.Process
+	if wp.cmd != nil {
+		process = wp.cmd.Process
+	}
+	wp.mu.Unlock()
+
+	if client != nil {
+		_ = client.Close()
+	}
+	if !alreadyStopped && process != nil {
+		_ = process.Kill()
+	}
+}
+
+// QuarantineReason reports why this worker was made permanently unusable. A
+// nil result means no transport quarantine has been recorded.
+func (wp *WorkerProcess) QuarantineReason() error {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
+	return wp.quarantineErr
 }
 
 func (wp *WorkerProcess) Stop(ctx context.Context) error {
@@ -214,4 +256,3 @@ func findRepoRoot() string {
 	}
 	return "."
 }
-
