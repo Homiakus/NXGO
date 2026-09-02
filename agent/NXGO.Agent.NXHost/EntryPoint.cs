@@ -298,7 +298,7 @@ public static partial class EntryPoint
                 part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
             }
             part.Close(BasePart.CloseWholeTree.False, BasePart.CloseModified.CloseModified, null);
-            Registry.Release(handle);
+            Registry.ReleaseWithDependents(handle);
             return FormatResponse(requestId, new Dictionary<string, object>
             {
                 ["closed"] = true,
