@@ -2,8 +2,6 @@ package nxgo
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
@@ -64,7 +62,7 @@ func (p *Part) AddComponent(ctx context.Context, params AddComponentParams) (*Co
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-addcomp-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("assembly.add_component"),
 		Op:        "assembly.add_component",
 		Payload:   reqData,
 	})
@@ -98,7 +96,7 @@ func (p *Part) ComponentTree(ctx context.Context) (*ComponentNode, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-tree-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("assembly.query_tree"),
 		Op:        "assembly.query_tree",
 		Payload:   reqData,
 	})
@@ -141,7 +139,7 @@ func (p *Part) BOM(ctx context.Context) ([]BOMItem, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-bom-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("assembly.query_bom"),
 		Op:        "assembly.query_bom",
 		Payload:   reqData,
 	})
@@ -179,7 +177,7 @@ func (c *Component) Remove(ctx context.Context) error {
 	}
 
 	resp, err := c.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-remcomp-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("assembly.remove_component"),
 		Op:        "assembly.remove_component",
 		Payload:   reqData,
 	})
