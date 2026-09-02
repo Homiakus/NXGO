@@ -16,7 +16,7 @@ namespace NXGO.Agent.NXHost;
 /// Transport threads only parse/enqueue. All NXOpen work executes through the
 /// shared Agent.Core NxExecutor on the bound NX execution thread.
 /// </summary>
-public static class EntryPoint
+public static partial class EntryPoint
 {
     private const int ProtocolMajor = 2;
     private const int ProtocolMinor = 0;
@@ -169,6 +169,18 @@ public static class EntryPoint
                     return StartPartClose(executor, requestId, requestPayload, token);
                 case "part.query_summary":
                     return StartPartSummary(executor, requestId, requestPayload, token);
+                case "object.release":
+                    return StartObjectRelease(executor, requestId, requestPayload, token);
+                case "feature.create_block":
+                    return StartCreateBlock(executor, requestId, requestPayload, token);
+                case "feature.create_cylinder":
+                    return StartCreateCylinder(executor, requestId, requestPayload, token);
+                case "part.query_bodies":
+                    return StartQueryBodies(executor, requestId, requestPayload, token);
+                case "geometry.query_mass_properties":
+                    return StartMassProperties(executor, requestId, requestPayload, token);
+                case "geometry.query_bounding_box":
+                    return StartBoundingBox(executor, requestId, requestPayload, token);
 
                 default:
                     return Task.FromResult(FormatError(requestId, "UNSUPPORTED_OPERATION", "canonical NXHost operation is not migrated yet: " + operation, false));
@@ -392,6 +404,9 @@ public static class EntryPoint
             case "part.open":
             case "part.save":
             case "part.close":
+            case "object.release":
+            case "feature.create_block":
+            case "feature.create_cylinder":
                 return true;
             default:
                 return false;
@@ -424,6 +439,12 @@ public static class EntryPoint
                 "part.save",
                 "part.close",
                 "part.query_summary",
+                "object.release",
+                "feature.create_block",
+                "feature.create_cylinder",
+                "part.query_bodies",
+                "geometry.query_mass_properties",
+                "geometry.query_bounding_box",
                 "shutdown",
             },
             ["max_payload_bytes"] = 4 * 1024 * 1024,
