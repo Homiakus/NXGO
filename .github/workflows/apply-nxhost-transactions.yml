@@ -1,0 +1,63 @@
+name: apply-nxhost-transactions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/nxhost_transactions.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply deterministic transaction wiring
+        run: python3 tools/apply_nxhost_transactions_wiring.py
+      - name: Verify transaction safety wiring
+        run: |
+          grep -Fq 'case "transaction.begin":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "transaction.commit":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "transaction.rollback":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'PreStartErrorCategory' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'TryMarkFailedBeforeStart(requestId, ex.Message, response);' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'UndoTransactionLedger<Session.UndoMarkId>' agent/NXGO.Agent.NXHost/EntryPoint.Transactions.cs
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('agent/NXGO.Agent.NXHost/EntryPoint.Transactions.cs').read_text(encoding='utf-8')
+          for method in ('StartTransactionCommit', 'StartTransactionRollback'):
+              start = text.index('private static Task<byte[]> ' + method)
+              end = text.find('\n    private static ', start + 1)
+              if end == -1:
+                  end = len(text)
+              body = text[start:end]
+              take = body.index('Transactions.Take(txId);')
+              started = body.index('Journal.MarkStarted(requestId);')
+              if take > started:
+                  raise SystemExit(method + ': transaction claim must happen before journal started state')
+          begin = text[text.index('private static Task<byte[]> StartTransactionBegin'):text.index('private static Task<byte[]> StartTransactionCommit')]
+          if begin.index('Transactions.EnsureCanBegin();') > begin.index('Journal.MarkStarted(requestId);'):
+              raise SystemExit('transaction.begin capacity preflight must precede MarkStarted')
+          PY
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit canonical transaction router
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent/NXGO.Agent.NXHost/EntryPoint.cs
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(nxhost): wire canonical transaction operations'
+          git push origin HEAD:main
