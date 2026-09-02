@@ -1,27 +1,32 @@
+using System.Globalization;
 using System.Runtime.Serialization;
-using System.Runtime.Serialization.Json;
 using System.Text;
+using Newtonsoft.Json;
 
 namespace NXGO.Protocol;
 
 /// <summary>
 /// Canonical Siemens-independent JSON codec for the NXGO wire contract.
-/// The serializer is available to both netstandard2.0 Agent code and ordinary
-/// CI, so escaping/Unicode/shape behavior can be proven without NXOpen.dll.
+/// Type metadata is explicitly disabled: payload JSON is data, never a request
+/// to instantiate arbitrary CLR types. The same netstandard2.0 codec is used by
+/// ordinary CI and the net48 NX host.
 /// </summary>
 public sealed class JsonWireCodec
 {
     public const int DefaultMaxPayloadBytes = 4 * 1024 * 1024;
 
-    private static readonly Type[] KnownPayloadTypes =
+    private static readonly JsonSerializerSettings Settings = new JsonSerializerSettings
     {
-        typeof(Dictionary<string, object>),
-        typeof(object[]),
-        typeof(string[]),
-        typeof(bool[]),
-        typeof(int[]),
-        typeof(long[]),
-        typeof(double[]),
+        Formatting = Formatting.None,
+        TypeNameHandling = TypeNameHandling.None,
+        MetadataPropertyHandling = MetadataPropertyHandling.Ignore,
+        DateParseHandling = DateParseHandling.None,
+        FloatParseHandling = FloatParseHandling.Double,
+        Culture = CultureInfo.InvariantCulture,
+        MaxDepth = 64,
+        MissingMemberHandling = MissingMemberHandling.Ignore,
+        NullValueHandling = NullValueHandling.Include,
+        StringEscapeHandling = StringEscapeHandling.Default,
     };
 
     private readonly int _maxPayloadBytes;
@@ -37,16 +42,13 @@ public sealed class JsonWireCodec
     public byte[] Serialize<T>(T value)
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
-        var serializer = CreateSerializer(typeof(T));
-        using (var stream = new MemoryStream())
+        var json = JsonConvert.SerializeObject(value, Settings);
+        var encoded = Encoding.UTF8.GetBytes(json);
+        if (encoded.Length > _maxPayloadBytes)
         {
-            serializer.WriteObject(stream, value);
-            if (stream.Length > _maxPayloadBytes)
-            {
-                throw new SerializationException($"serialized payload exceeds {_maxPayloadBytes} bytes");
-            }
-            return stream.ToArray();
+            throw new SerializationException($"serialized payload exceeds {_maxPayloadBytes} bytes");
         }
+        return encoded;
     }
 
     public T Deserialize<T>(byte[] payload)
@@ -57,30 +59,17 @@ public sealed class JsonWireCodec
             throw new SerializationException($"wire payload exceeds {_maxPayloadBytes} bytes");
         }
 
-        var serializer = CreateSerializer(typeof(T));
-        using (var stream = new MemoryStream(payload, writable: false))
+        var json = Encoding.UTF8.GetString(payload);
+        var value = JsonConvert.DeserializeObject<T>(json, Settings);
+        if (value == null)
         {
-            var value = serializer.ReadObject(stream);
-            if (!(value is T typed))
-            {
-                throw new SerializationException("wire payload did not deserialize to " + typeof(T).FullName);
-            }
-            return typed;
+            throw new SerializationException("wire payload did not deserialize to " + typeof(T).FullName);
         }
+        return value;
     }
 
     public string SerializeUtf8<T>(T value)
     {
         return Encoding.UTF8.GetString(Serialize(value));
-    }
-
-    private static DataContractJsonSerializer CreateSerializer(Type type)
-    {
-        return new DataContractJsonSerializer(type, new DataContractJsonSerializerSettings
-        {
-            UseSimpleDictionaryFormat = true,
-            MaxItemsInObjectGraph = 65_536,
-            KnownTypes = KnownPayloadTypes,
-        });
     }
 }
