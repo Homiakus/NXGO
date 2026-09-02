@@ -52,6 +52,8 @@ jobs:
         shell: pwsh
         run: |
           $required = @(
+            (Join-Path $env:NXGO_AGENT_BIN 'Newtonsoft.Json.dll'),
+            (Join-Path $env:NXGO_AGENT_BIN 'NXGO.Protocol.dll'),
             (Join-Path $env:NXGO_AGENT_BIN 'NXGO.Agent.Core.dll'),
             (Join-Path $env:NXGO_AGENT_BIN 'NXGO.Agent.NXHost.dll'),
             (Join-Path $env:GITHUB_WORKSPACE 'agent\bundle\CompiledHostBootstrap.cs')
@@ -59,6 +61,9 @@ jobs:
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "required canonical Agent artifact missing: $path" }
           }
+      - name: Canonical wire protocol contract
+        shell: pwsh
+        run: dotnet test agent/NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj -c Release --nologo
       - name: Invariant gate
         shell: pwsh
         run: go run ./cmd/invariantcheck
