@@ -12,6 +12,27 @@ public sealed class ProtocolVersionDto
     public int Minor { get; set; }
 }
 
+/// <summary>
+/// Minimal first-pass envelope used only to distinguish a handshake from a
+/// normal RPC without exposing Json.NET DOM types to NXHost. Full validation is
+/// performed by deserializing the selected typed DTO immediately afterward.
+/// </summary>
+[DataContract]
+public sealed class WireMessageProbeDto
+{
+    [DataMember(Name = "protocol_version", Order = 1, EmitDefaultValue = false)]
+    public ProtocolVersionDto? ProtocolVersion { get; set; }
+
+    [DataMember(Name = "nonce", Order = 2, EmitDefaultValue = false)]
+    public string? Nonce { get; set; }
+
+    [DataMember(Name = "request_id", Order = 3, EmitDefaultValue = false)]
+    public string? RequestId { get; set; }
+
+    [DataMember(Name = "op", Order = 4, EmitDefaultValue = false)]
+    public string? Operation { get; set; }
+}
+
 [DataContract]
 public sealed class HandshakeRequestDto
 {
