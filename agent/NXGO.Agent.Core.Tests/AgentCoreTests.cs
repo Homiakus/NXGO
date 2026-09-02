@@ -113,7 +113,7 @@ public sealed class AgentCoreTests
     }
 
     [Fact]
-    public void Tracked_execution_cannot_be_cancelled_as_not_started_after_start()
+    public async Task Tracked_execution_cannot_be_cancelled_as_not_started_after_start()
     {
         var executor = new NxExecutor();
         using var bound = new ManualResetEventSlim(false);
@@ -147,8 +147,7 @@ public sealed class AgentCoreTests
         releaseOperation.Set();
         nxThread.Join(TimeSpan.FromSeconds(5));
         Assert.False(nxThread.IsAlive);
-        Assert.True(tracked.Task.IsCompletedSuccessfully);
-        Assert.Equal(99, tracked.Task.GetAwaiter().GetResult());
+        Assert.Equal(99, await tracked.Task);
         Assert.Equal(NxExecutionState.Completed, tracked.State);
     }
 
