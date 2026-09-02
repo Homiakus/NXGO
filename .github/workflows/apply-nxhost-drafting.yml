@@ -1,0 +1,78 @@
+name: apply-nxhost-drafting
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/nxhost_drafting.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply deterministic Drafting wiring
+        run: python3 tools/apply_nxhost_drafting_wiring.py
+      - name: Verify Drafting safety invariants
+        run: |
+          grep -Fq 'case "drafting.create_sheet":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "drafting.query_sheets":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "drafting.export_pdf":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'MaxDraftingSnapshotSheets = 1024' agent/NXGO.Agent.NXHost/EntryPoint.Drafting.cs
+          grep -Fq 'value snapshots' agent/NXGO.Agent.NXHost/EntryPoint.Drafting.cs
+          grep -Fq 'currently supports only black_and_white color mode' agent/NXGO.Agent.NXHost/EntryPoint.Drafting.cs
+          grep -Fq 'requested drawing sheets were not found' agent/NXGO.Agent.NXHost/EntryPoint.Drafting.cs
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('agent/NXGO.Agent.NXHost/EntryPoint.Drafting.cs').read_text(encoding='utf-8')
+
+          def body(name):
+              start = text.index('private static Task<byte[]> ' + name)
+              end = text.find('\n    private static ', start + 1)
+              return text[start:] if end == -1 else text[start:end]
+
+          create = body('StartDraftingCreateSheet')
+          if create.index('Registry.Resolve(partHandle, "Part")') < create.index('executor.EnqueueTracked'):
+              raise SystemExit('create_sheet must resolve Part on NX execution thread')
+          if create.index('Registry.Count >= Registry.Capacity') > create.index('Journal.MarkStarted(requestId);'):
+              raise SystemExit('create_sheet registry capacity preflight must precede MarkStarted')
+          if create.index('Registry.Resolve(partHandle, "Part")') > create.index('Journal.MarkStarted(requestId);'):
+              raise SystemExit('create_sheet handle revalidation must precede MarkStarted')
+
+          query = body('StartDraftingQuerySheets')
+          if 'Registry.Register(' in query:
+              raise SystemExit('query_sheets must not allocate registry handles')
+          if query.index('Registry.Resolve(partHandle, "Part")') < query.index('executor.EnqueueTracked'):
+              raise SystemExit('query_sheets must resolve Part on NX execution thread')
+
+          export = body('StartDraftingExportPdf')
+          if export.index('Registry.Resolve(partHandle, "Part")') < export.index('executor.EnqueueTracked'):
+              raise SystemExit('export_pdf must resolve Part on NX execution thread')
+          if export.index('SelectDrawingSheets(part, requestedSheets)') > export.index('Journal.MarkStarted(requestId);'):
+              raise SystemExit('export_pdf sheet selection must complete before MarkStarted')
+          if export.index('Journal.MarkStarted(requestId);') > export.index('scope.CommitOnce'):
+              raise SystemExit('export_pdf must mark started before artifact commit')
+          PY
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit canonical Drafting router
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent/NXGO.Agent.NXHost/EntryPoint.cs
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(nxhost): wire canonical drafting operations'
+          git push origin HEAD:main
