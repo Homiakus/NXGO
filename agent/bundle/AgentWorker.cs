@@ -861,7 +861,7 @@ public class Program
             if (string.IsNullOrEmpty(ugiiVer)) ugiiVer = "2512";
 
             var hsRespJson = string.Format(
-                "{{\"protocol_version\":{{\"major\":1,\"minor\":0}},\"agent_version\":\"v0.1.0-realnx\",\"nx_release\":\"{0}\",\"nx_build\":\"{0}.real\",\"nx_pid\":{1},\"session_id\":\"{2}\",\"epoch\":{3},\"capabilities\":[\"nx.ping\",\"session.info\",\"transaction.begin\",\"transaction.commit\",\"transaction.rollback\",\"part.new\",\"part.open\",\"part.save\",\"part.close\",\"part.query_summary\",\"object.release\"],\"max_payload_bytes\":4194304,\"security_policy\":\"local_pipe_only\"}}",
+                "{{\"protocol_version\":{{\"major\":2,\"minor\":0}},\"agent_version\":\"v0.2.0-realnx\",\"nx_release\":\"{0}\",\"nx_build\":\"{0}.real\",\"nx_pid\":{1},\"session_id\":\"{2}\",\"epoch\":{3},\"capabilities\":[\"nx.ping\",\"session.info\",\"transaction.begin\",\"transaction.commit\",\"transaction.rollback\",\"part.new\",\"part.open\",\"part.save\",\"part.close\",\"part.query_summary\",\"object.release\"],\"max_payload_bytes\":4194304,\"security_policy\":\"local_pipe_only\"}}",
                 ugiiVer,
                 Process.GetCurrentProcess().Id,
                 Registry.SessionId,

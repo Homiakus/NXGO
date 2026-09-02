@@ -8,7 +8,9 @@ import (
 )
 
 const (
-	CurrentProtocolMajor = 1
+	// v2 makes ObjectHandleWire.Generation mandatory. This is intentionally a
+	// major-version boundary: v1 peers cannot safely reason about handle reuse.
+	CurrentProtocolMajor = 2
 	CurrentProtocolMinor = 0
 )
 
