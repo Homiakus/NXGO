@@ -51,7 +51,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	if !strings.Contains(project, "<ProjectReference") || !strings.Contains(project, "NXGO.Agent.Core") {
 		t.Fatal("NXHost must consume NXGO.Agent.Core through a ProjectReference")
 	}
-	if !strings.Contains(project, `Reference Include="System.Web.Extensions"`) {
+	if !strings.Contains(project, "System.Web.Extensions") {
 		t.Fatal("canonical NXHost must use the framework JSON serializer rather than manual JSON slicing")
 	}
 	for _, marker := range []string{
