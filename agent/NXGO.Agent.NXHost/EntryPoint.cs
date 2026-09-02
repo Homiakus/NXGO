@@ -195,6 +195,12 @@ public static partial class EntryPoint
                     return StartAssemblyQueryBOM(executor, requestId, requestPayload, token);
                 case "assembly.remove_component":
                     return StartAssemblyRemoveComponent(executor, requestId, requestPayload, token);
+                case "drafting.create_sheet":
+                    return StartDraftingCreateSheet(executor, requestId, requestPayload, token);
+                case "drafting.query_sheets":
+                    return StartDraftingQuerySheets(executor, requestId, requestPayload, token);
+                case "drafting.export_pdf":
+                    return StartDraftingExportPdf(executor, requestId, requestPayload, token);
 
                 default:
                     return Task.FromResult(FormatError(requestId, "UNSUPPORTED_OPERATION", "canonical NXHost operation is not migrated yet: " + operation, false));
@@ -470,6 +476,8 @@ public static partial class EntryPoint
             case "transaction.rollback":
             case "assembly.add_component":
             case "assembly.remove_component":
+            case "drafting.create_sheet":
+            case "drafting.export_pdf":
                 return true;
             default:
                 return false;
@@ -515,6 +523,9 @@ public static partial class EntryPoint
                 "assembly.query_tree",
                 "assembly.query_bom",
                 "assembly.remove_component",
+                "drafting.create_sheet",
+                "drafting.query_sheets",
+                "drafting.export_pdf",
                 "shutdown",
             },
             ["max_payload_bytes"] = 4 * 1024 * 1024,
