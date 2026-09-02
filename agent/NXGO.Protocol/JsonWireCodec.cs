@@ -16,7 +16,6 @@ public sealed class JsonWireCodec
     private static readonly Type[] KnownPayloadTypes =
     {
         typeof(Dictionary<string, object>),
-        typeof(List<object>),
         typeof(object[]),
         typeof(string[]),
         typeof(bool[]),
