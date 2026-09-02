@@ -1,0 +1,49 @@
+name: apply-production-agent-hardening
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/apply_agent_hardening.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  harden:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply deterministic AgentWorker hardening
+        run: python3 tools/apply_agent_hardening.py
+      - name: Verify expected hardening markers
+        run: |
+          grep -q 'implicit work/display fallback is forbidden' agent/bundle/AgentWorker.cs
+          grep -q 'implicit first-body fallback is forbidden' agent/bundle/AgentWorker.cs
+          grep -q 'OUTCOME_UNKNOWN' agent/bundle/AgentWorker.cs
+          ! grep -q 'try { part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False); } catch {}' agent/bundle/AgentWorker.cs
+          ! grep -q 'minMax\[0\] / 1000.0' agent/bundle/AgentWorker.cs
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit hardened production Agent
+        run: |
+          if git diff --quiet -- agent/bundle/AgentWorker.cs; then
+            echo 'AgentWorker.cs already hardened; nothing to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent/bundle/AgentWorker.cs
+          git commit -m 'fix(agent): harden production execution and object resolution'
+          git push origin HEAD:main
