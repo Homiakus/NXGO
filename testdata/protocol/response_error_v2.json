@@ -3,7 +3,6 @@
   "status": "ERROR",
   "error": {
     "category": "INVALID_ARGUMENT",
-    "nx_error_code": 0,
     "message": "bad {ref} \"quoted\" — ошибка",
     "op": "part.open",
     "recoverable": false,
