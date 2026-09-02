@@ -1,502 +1,1131 @@
 # NXGO MASTER PLAN
 
 Status: **Living implementation plan**  
-Created: 2026-08-29
+Created: 2026-08-29  
+Last major audit update: 2026-09-02
 
-The plan is deliberately staged so the project proves the risky boundaries before expanding API surface. Every phase has explicit exit gates. Unexpected discoveries update this document and, when architectural, create an ADR.
-
-## North-star outcome
-
-A Go developer can import NXGO and perform high-value Siemens NX automation through a stable API without managing NXOpen builders, Siemens DLL loading, NX main-thread execution, remote object lifetime, release differences, logs or process recovery.
-
-## Implementation checkpoint — Agent safety boundary exists
-
-NXGO has moved beyond architecture-only documentation. The repository now contains:
-
-- Go module and initial safety/runtime primitives;
-- `nxctl test fast|fuzz|nx|matrix|chaos|soak|perf` command surface;
-- race-enabled/Pure-Go CI and invariant policy checker;
-- machine-readable invariant-compliance map;
-- stale session/epoch object-reference tests and fuzz targets;
-- session-health state machine preventing in-place reuse of poisoned/lost sessions;
-- Fake-Agent idempotency/ambiguous-response chaos contract;
-- fail-closed real Siemens NX smoke via `run_journal.exe` + NXOpen Python journal;
-- self-hosted Windows NX workflow that cannot pass without an explicit NX installation;
-- **NX-independent .NET Agent core targeting `netstandard2.0`**;
-- **`NxExecutor` that separates transport/background threads from the bound NX execution thread**;
-- **single-attempt `BuilderScope<T>` with unconditional cleanup**;
-- **bounded named-pipe framing/server plus cross-language Go/C# golden framing tests**;
-- **`net48` dedicated-worker NXHost skeleton referencing only an installed NX through `NXGO_NX_MANAGED`**;
-- executable quality-gate documentation and PR evidence template.
-
-The NX-independent Agent core is verified in ordinary GitHub Actions together with Go fast/chaos gates. This still does **not** prove the new NXHost inside a licensed Siemens NX process; that evidence requires an authorized pinned Windows/NX runner.
+This file is the single execution roadmap for NXGO. Do not create a parallel roadmap for implementation work. New architectural findings, production incidents, failed tests, NX-version incompatibilities, and audit findings must update this plan and, when appropriate, the ADR and invariant catalogs.
 
 ---
 
-## Phase 0 — Architecture baseline [DONE: documentation]
+# 0. North-star outcome
 
-### Deliverables
+A Go developer can import NXGO and perform high-value Siemens NX / Designcenter automation through a stable, idiomatic API without directly managing:
 
-- [x] product requirements;
-- [x] process-boundary architecture;
-- [x] API layering decision;
-- [x] object lifetime model;
-- [x] version/capability model;
-- [x] observability strategy;
-- [x] NX-backed testing strategy;
-- [x] engineering standard/programming rules;
-- [x] programming invariant catalog;
-- [x] testing playbook and Definition of Done;
-- [x] security baseline;
-- [x] codegen/scanner design;
-- [x] deployment and CLI specifications.
+- NXOpen builder lifecycles;
+- Siemens DLL loading;
+- NX main-thread execution constraints;
+- remote NX object lifetime;
+- undo/update semantics;
+- NX release differences;
+- crash recovery;
+- logs and syslog correlation;
+- retry ambiguity;
+- process isolation;
+- staged output publication.
 
-### Gate
+The target is **not** a handwritten 1:1 Go wrapper around NXOpen. NXGO is a safe automation runtime with layered APIs:
 
-No production implementation begins by adding ad-hoc cgo bindings or exposing Siemens types in public Go APIs.
-
----
-
-## Phase 1 — Repository/build skeleton [IN PROGRESS]
-
-### Tasks
-
-- [x] create Go module and initial package layout;
-- [x] create NX-independent .NET Agent core with NXHost/release boundary;
-- [x] create stable typed protocol messages and validation schemas;
-- [x] create initial `nxctl` command and test-loop surface;
-- [x] add formatting/linting/unit/race CI that does not require NX;
-- [x] add .NET Agent Core CI that does not require NX;
-- [x] add executable invariant checker and compliance metadata;
-- [x] add fail-closed Windows real-NX smoke script/test journal;
-- [x] add initial Windows Agent build script requiring installed `NXOpen.dll` path;
-- [ ] validate Agent/NXHost build on authorized pinned NX developer machine;
-- [ ] document exact supported compiler/runtime versions discovered from target NX builds in executable manifests;
-- [ ] add version metadata generation.
-
-### Tests
-
-- [x] Go unit smoke;
-- [x] race-enabled Go suite in GitHub Actions;
-- [x] explicit `CGO_ENABLED=0 go test ./...` fast gate;
-- [x] `go vet`;
-- [x] invariant-policy gate;
-- [x] Fake-Agent chaos/idempotency contract;
-- [x] .NET Agent Core unit/contract smoke;
-- [x] local named-pipe transport round trip without NX;
-- [x] cross-language Go/C# framing golden;
-- [x] protocol message serialization and validation tests;
-- [ ] protobuf/codegen reproducibility.
-
-### Exit gate
-
-Fresh checkout builds/tests all non-NX components deterministically; NXHost additionally builds on an authorized pinned NX developer machine using installed Siemens assemblies without copying them into the repository.
+1. workflow/declarative API;
+2. idiomatic domain API;
+3. generated raw API;
+4. UF/raw escape hatch;
+5. controlled journal/library fallback.
 
 ---
 
-## Phase 2 — Protocol + fake Agent vertical slice [IN PROGRESS]
+# 1. Evidence policy and status model
 
-### Tasks
+The previous plan used broad labels such as `DELIVERED` or `REAL-NX EVIDENCE VERIFIED`. The 2026-09-02 audit found that those labels can overstate maturity when the implementation, fake-agent proof, and real-NX proof are at different levels.
 
-- [x] handshake messages;
-- [x] protocol version negotiation;
-- [x] capabilities;
-- [x] stable request/response envelope;
-- [x] stable error envelope;
-- [x] log/event stream;
-- [x] cancellation semantics for queued executor work at core level;
-- [x] bounded length-prefixed bootstrap framing;
-- [x] named-pipe server transport primitive;
-- [x] Pure-Go Windows named-pipe production client;
-- [x] fake Agent server over production transport for Go tests;
-- [x] initial in-process Fake-Agent failure semantics for request-ID idempotency and session poison.
+Every major feature now tracks four independent dimensions:
 
-### Tests
+- **D — Design**: architecture/contracts/invariants are specified;
+- **I — Implementation**: production code exists;
+- **S — Simulated proof**: no-NX / Fake-Agent / unit / fuzz / model tests exist;
+- **R — Real-NX proof**: the production path passed semantic tests on a pinned NX build and produced retained evidence.
 
-- [x] protocol backward/forward minor compatibility;
-- [x] bootstrap frame malformed/length mismatch tests;
-- [x] bootstrap frame fuzz target;
-- [x] local named-pipe roundtrip in Agent Core suite;
-- [x] pure-Go framed transport client roundtrip;
-- [x] queued request cancellation before NX execution;
-- [ ] broken pipe during real transport request;
-- [ ] oversized production message;
-- [ ] unauthorized local client;
-- [ ] stream backpressure;
-- [x] committed mutation + lost response does not duplicate on Fake-Agent replay;
-- [x] poisoned simulated session rejects further work.
+A feature is production-ready only when all required dimensions reach the release gate.
 
-### Gate
+## Evidence classes
 
-The current string bootstrap protocol (`ping`, `nx.ping`, `shutdown`) is **temporary scaffolding** and MUST NOT become public API. Phase 2 exits only when Go client completes typed handshake/call/log-stream against the production transport with no NX installation.
+- `E0` — documentation only;
+- `E1` — unit/static/model evidence;
+- `E2` — production protocol with Fake Agent / local process evidence;
+- `E3` — one pinned real NX release, local or self-hosted, with semantic assertions;
+- `E4` — two supported NX release families with retained compatibility evidence;
+- `E5` — soak/chaos/performance/security evidence at release scale.
+
+**Rule:** documentation must never claim a higher evidence class than the repository can reproduce or point to through retained CI/test artifacts.
 
 ---
 
-## Phase 3 — Minimal real NX Agent [DONE: REAL-NX EVIDENCE VERIFIED]
+# 2. 2026-09-02 production-hardening audit checkpoint
 
-### Tasks
+The architecture remains sound, but the audit identified safety-critical gaps in the execution kernel. These findings override previous completion labels where they conflict.
 
-- [x] create dedicated-worker NXHost source entry point;
-- [x] bind `NxExecutor` to NXHost entry thread in worker design;
-- [x] keep pipe transport/background work outside direct NXOpen execution;
-- [x] integrate Agent Core health state into worker skeleton;
-- [x] add bootstrap `nx.ping` operation that queues the NXOpen log call through `NxExecutor`;
-- [x] use `AtTermination` unload policy for long-lived worker host;
-- [x] validate Agent bootstrap inside pinned real NX (NX 2512);
-- [x] discover exact NX release/build through Agent;
-- [ ] secured Windows pipe ACL endpoint;
-- [ ] explicit callback reentrancy/call-depth policy;
-- [x] structured request/log correlation;
-- [x] stable first command: session information;
-- [x] first part command: open/query/save/close controlled fixture;
-- [ ] separate Siemens-supported interactive-attach pump (do not reuse dedicated worker loop);
-- [x] preliminary real-NX `run_journal.exe` smoke proving NXOpen session access without claiming Agent functionality.
+## Confirmed strengths
 
-### Tests
+- Pure-Go public SDK boundary;
+- separate NX process / Agent architecture;
+- explicit NX execution-thread gateway;
+- framed local IPC;
+- protocol envelopes and request IDs;
+- session health model;
+- object handles and registry concept;
+- undo transaction layer;
+- Fake-Agent chaos/idempotency model;
+- supervisor and syslog harvesting;
+- real-NX test harness structure;
+- API metadata scanner;
+- high-level domain/workflow direction;
+- fuzz/chaos/soak campaign structure.
 
-- [x] NX-independent executor proves producer thread != execution thread;
-- [x] wrong-thread executor draining is rejected;
-- [x] fail-closed external NX smoke harness exists;
-- [x] build NXHost against pinned installed NXOpen assemblies;
-- [x] run NXHost and prove `nx.ping` executes on the bound NX thread;
-- [x] execute smoke on authorized pinned NX builds and record exact versions;
-- [ ] attach to real interactive NX through separate adapter;
-- [x] start controlled Agent worker from Go supervisor;
-- [x] exact build reported through Agent handshake;
-- [x] repeated connect/disconnect;
-- [x] timeout while command queued/running with safe cancellation semantics;
-- [x] Agent NXException translated;
-- [x] NX process termination detected.
+## Blocking audit findings
 
-### Exit gate
+### A-001 — late response can corrupt RPC sequencing — **P0**
 
-`nxctl status` and Go integration tests communicate reliably with real pinned NX 2512 through the NXGO Agent and execute operations on the bound thread.
+Current Go transport creates a per-call reader goroutine. When a context expires, `Call` can return while that reader remains blocked on the same pipe. A later call may create another reader. The client also does not strictly reject a response whose `request_id` differs from the outstanding request.
 
----
+Risk: a late response to request A can be consumed as request B, including for mutating operations.
 
-## Phase 4 — Supervisor and continuous logs [DELIVERED]
+### A-002 — timed-out NX work may still execute — **P0**
 
-### Tasks
+The production bundled Agent can return timeout while queued work remains executable by the NX thread.
 
-- [x] NX installation discovery;
-- [x] exact version selection;
-- [x] worker launcher;
-- [x] ownership manifest;
-- [x] timeout/watchdog;
-- [x] NX syslog discovery/follow;
-- [x] merge NX/Agent/runner logs;
-- [x] preliminary per-run artifact directory in real-NX smoke;
-- [x] failure artifact bundling / diagnostic output capture;
-- [x] process crash/fatal-error classification;
-- [x] worker recycle policy;
-- [x] `nxctl doctor`, `status`, `installations`.
+Risk: caller observes failure, mutation later commits, caller retries, mutation is duplicated or state becomes ambiguous.
 
-### Tests
+### A-003 — Fake-Agent idempotency is stronger than production Agent — **P0**
 
-- [x] forced process kill;
-- [x] hung/fake worker timeout;
-- [x] log rotation/truncation;
-- [x] worker orphan cleanup;
-- [x] simultaneous side-by-side NX installations.
+Fake-Agent records request results and can model committed-mutation/lost-response replay. Production Agent does not yet provide equivalent request-journal/idempotency guarantees.
 
-### Exit gate
+Risk: chaos tests prove behavior that production does not enforce.
 
-- [x] Every worker failure is classified and leaves sufficient diagnostics for reproduction.
+### A-004 — object resolution is not consistently fail-closed — **P0**
 
----
+Some production resolver paths catch object-resolution errors and fall back to work/display part or the first body.
 
-## Phase 5 — Object registry + transactions [IN PROGRESS: RUNTIME ENFORCED]
+Risk: a stale/foreign/invalid handle can cause an operation to target a different NX object rather than fail before mutation.
 
-### Tasks
+### A-005 — runtime ObjectRef contract diverges from invariant model — **P0**
 
-- [x] define initial session/epoch/generation-aware `ObjectRef` safety primitive;
-- [x] opaque ObjectRef wire protocol;
-- [x] typed Go proxies (`pkg/nxgo`);
-- [x] Agent object registry and handle release;
-- [x] scopes/batch release;
-- [x] initial stale session/epoch validation + fuzz target;
-- [x] generic `BuilderScope<T>` safety primitive;
-- [ ] NX Builder adapter/factory recipes using `BuilderScope<T>`;
-- [x] NX undo-mark transaction manager (`transaction.begin`, `transaction.commit`, `transaction.rollback`);
-- [ ] required UpdateManager/update semantics per recipe;
-- [x] rollback and dirty-session state;
-- [x] staged file outputs;
-- [ ] semantic mutation postconditions.
+The internal invariant type carries session/epoch/object/generation identity, while the wire handle does not consistently carry generation and the production registry does not use one canonical reference implementation.
 
-### Tests
+### A-006 — mass/bounding-box unit contract conflicts with semantic tests — **P0**
 
-- [x] generic BuilderScope destroys after success;
-- [x] generic BuilderScope destroys after failure and rejects same-builder retry;
-- [ ] real NX Builder destroy/retry test;
-- [x] handle release/leak tests;
-- [x] stale handle after epoch/session change at pure-Go layer;
-- [x] stale handle after part close;
-- [x] rollback success on real NX;
-- [x] transaction commit on real NX;
-- [ ] quota enforcement;
-- [ ] transaction cancellation.
+The production UF conversion path and the Go real-NX tests currently expect incompatible units. This makes current geometry evidence unreliable until normalized against explicit unit contracts and independent oracles.
 
-### Exit gate
+### A-007 — `Part.MassProperties` can resolve to one body — **P0**
 
-Mutating real-NX integration tests cannot leak handles/builders and failed mutations either roll back or explicitly quarantine the worker.
+A part-level query must represent all applicable bodies, not silently the first body.
+
+### A-008 — public parameters can be accepted but ignored — **P0/P1**
+
+Examples include feature boolean-operation/target-body fields whose backend behavior can remain hardcoded to create-new-body semantics.
+
+Risk: syntactically successful call produces semantically wrong CAD.
+
+### A-009 — save-on-close can suppress save failure — **P0**
+
+Explicit save requests must not report a successful close after swallowing a failed save.
+
+### A-010 — production Agent duplicates tested Agent.Core primitives — **P1**
+
+`agent/bundle/AgentWorker.cs` contains duplicate execution, framing, lifecycle, registry, and parsing logic instead of using the canonical tested Agent Core implementation.
+
+Risk: safety fixes/tests can apply to one path but not the actual real-NX runtime.
+
+### A-011 — handwritten JSON parsing/formatting in production Agent — **P1**
+
+String-search JSON parsing and manual response construction are not a stable protocol implementation for arbitrary paths, names, Unicode, quotes, braces, and control characters.
+
+### A-012 — API scanner is not yet a generated raw API — **P1**
+
+Scanner/diff exists, but signature IDs, overload-safe diffing, generated Go bindings, generated C# dispatch and source-to-manifest traceability are incomplete.
+
+### A-013 — registry lifetime/quotas need hard limits — **P1**
+
+Repeated queries can create registered handles without a fully enforced lease/quota/lifetime model.
+
+### A-014 — local pipe security is development-grade — **P1**
+
+Production endpoint still needs explicit per-user/worker ACL and peer validation.
+
+### A-015 — public real-NX evidence is incomplete — **P1**
+
+Fast CI is reproducible. Real-NX workflow exists, but release claims must require retained real-NX run evidence and semantic artifact validation rather than checklist status alone.
 
 ---
 
-## Phase 6 — API scanner + generated raw layer [DELIVERED]
+# 3. Immediate development policy — HARDENING FREEZE
 
-### Tasks
+Until **Hardening Gate H6** is passed:
 
-- [x] scan approved NXOpen assemblies/metadata;
-- [x] deterministic normalized manifest;
-- [ ] API signature IDs;
-- [x] manifest diff tool;
-- [ ] generated Go raw types/methods;
-- [ ] generated C# dispatch glue where needed;
-- [x] capability catalog generation;
-- [x] `nxctl api scan/diff/find/inspect`;
-- [ ] trace generated source to manifest/build.
+## Allowed
 
-### Tests
+- protocol correctness fixes;
+- Agent Core consolidation;
+- object lifetime fixes;
+- transaction/rollback fixes;
+- unit normalization;
+- supervisor/recovery work;
+- semantic real-NX fixtures;
+- API scanner correctness;
+- security hardening;
+- diagnostics and test infrastructure;
+- documentation required to support the above.
 
-- [x] deterministic generation;
-- [x] compile generated code;
-- [x] removed/changed fixture API diff;
-- [x] sample real NX raw invocation;
-- [x] no Siemens binary copied into repository artifacts.
+## Frozen by default
 
-### Exit gate
+Do not materially expand public NX feature coverage with new large domains such as:
 
-- [x] A new NX build can be scanned and broad raw bindings regenerated with a reproducible diff.
+- CAM;
+- routing;
+- CAE;
+- broad PMI;
+- advanced drafting;
+- large feature catalogs;
+- remote gateway;
+- worker pool;
+- arbitrary reflection escape hatches.
+
+Small additions are allowed only when required to construct a hardening fixture or prove a safety invariant.
+
+**Reason:** adding API surface before fixing the execution kernel multiplies unsafe semantics and migration cost.
 
 ---
 
-## Phase 7 — High-value domain API v0 [DELIVERED]
+# 4. Hardening program
 
-Implement in Pareto order.
+# H0 — Baseline, reproducibility, and audit-lock
 
-### Parts/attributes
+Priority: **P0**  
+Target evidence: `E1 → E2`
 
-- [x] open/new/save/close;
-- [x] work/display part queries;
-- [ ] batch attributes;
-- [x] units/basic metadata.
+## Tasks
 
-### Geometry/modeling
+- [ ] record the audit findings A-001..A-015 in the invariant/ADR system where applicable;
+- [ ] add an `AUDIT_FINDING` or equivalent reference field to remediation tests/commits;
+- [ ] change completion language in docs so simulated evidence and real-NX evidence cannot be conflated;
+- [ ] capture current protocol fixtures and golden frames before refactoring;
+- [ ] capture current supported Go/.NET/NX runtime assumptions;
+- [ ] add a machine-readable capability/evidence manifest per tested NX release;
+- [ ] define canonical semantic units for every public geometry quantity;
+- [ ] define mutation classes: read-only / deterministic-idempotent / transactional / ambiguous-nonretryable;
+- [ ] document connection/session quarantine rules.
 
-- [x] bodies/faces/edges summaries;
-- [x] bounding box/mass properties;
-- [x] selected simple feature creation (block, cylinder);
-- [ ] semantic hole operation;
-- [ ] bulk analysis request.
+## Tests / gates
+
+- [ ] fast CI remains green;
+- [ ] invariant checker rejects an implementation marked production-safe without required evidence references;
+- [ ] no new public CAD mutation API is merged while H0-H6 freeze is active unless explicitly justified.
+
+## Exit gate
+
+Audit findings are represented in executable policy and all following work has unambiguous acceptance criteria.
+
+---
+
+# H1 — Protocol sequencing, cancellation, and ambiguity semantics
+
+Priority: **P0**  
+Addresses: A-001, A-002  
+Target evidence: `E2 → E3`
+
+## Architecture decision
+
+Use **one reader** per production connection. Never permit independent concurrent `Receive` calls on the same framed stream.
+
+Recommended design:
+
+```text
+pipe reader goroutine
+      |
+      v
+validate frame/envelope
+      |
+      +--> pending[requestID] response channel
+      +--> stream/event dispatcher
+      +--> protocol-fatal => close connection
+```
+
+## Go transport tasks
+
+- [ ] replace per-call read goroutines with one connection-owned receive loop;
+- [ ] maintain a bounded `pending map[RequestID]callState`;
+- [ ] reject duplicate in-flight RequestIDs;
+- [ ] require exact `ResponseEnvelope.RequestID` correlation;
+- [ ] treat unknown/duplicate response IDs as protocol violation;
+- [ ] on framing/decode/correlation violation close the connection and mark session lost/ambiguous;
+- [ ] make request ID generation collision-resistant and testable;
+- [ ] distinguish caller cancellation from server-confirmed cancellation;
+- [ ] expose structured `ErrOutcomeUnknown` / `ErrSessionLost` rather than generic timeout for ambiguous mutation state;
+- [ ] ensure `Close` unblocks reader/writers and completes all pending calls exactly once;
+- [ ] bound pending-call count and payload memory.
+
+## Agent executor tasks
+
+- [ ] queue items carry explicit states: queued / started / committed / completed / cancelled-before-start;
+- [ ] cancellation before NX execution removes/skips the item deterministically;
+- [ ] once NX execution starts, client cancellation must not imply rollback or non-execution;
+- [ ] return an explicit final outcome whenever the connection remains healthy;
+- [ ] if outcome cannot be proven after transport loss, quarantine the worker/session;
+- [ ] define cancellation semantics separately for read-only and mutating operations;
+- [ ] remove timeout behavior that allows an operation to execute later while caller assumes it did not.
+
+## Required tests
+
+### No-NX deterministic tests
+
+- [ ] timeout A, late response A, request B — B must never receive A;
+- [ ] 1,000 randomized request/timeout/late-response sequences;
+- [ ] duplicate response ID;
+- [ ] unknown response ID;
+- [ ] connection close with N pending calls;
+- [ ] server sends malformed frame between valid calls;
+- [ ] cancellation before dequeue prevents work execution;
+- [ ] cancellation after execution starts produces explicit ambiguous/final state, never false `not executed` semantics;
+- [ ] race test with concurrent callers;
+- [ ] goroutine leak test after repeated timeout cycles.
+
+### Real-NX tests
+
+- [ ] queue a mutation behind an intentionally blocked NX operation, cancel it before start, verify CAD state unchanged;
+- [ ] force timeout after mutation start and validate quarantine/outcome policy;
+- [ ] kill Agent/NX after commit but before normal response and verify retry policy does not blindly duplicate mutation.
+
+## Exit gate H1
+
+No scenario exists in which a timed-out/late response can be mistaken for another RPC, and no cancelled-before-start mutation executes later.
+
+---
+
+# H2 — Production idempotency and mutation outcome journal
+
+Priority: **P0**  
+Addresses: A-003  
+Target evidence: `E2 → E3`
+
+## Required model
+
+Every mutating request gets a stable identity and payload fingerprint.
+
+Suggested record:
+
+```text
+RequestID
+Operation
+PayloadHash
+SessionID
+Epoch
+TxID
+State: RECEIVED | STARTED | COMMITTED | ROLLED_BACK | FAILED | OUTCOME_UNKNOWN
+ResultEnvelope
+CreatedAt
+CompletedAt
+```
+
+## Tasks
+
+- [ ] move idempotency behavior from Fake-Agent-only semantics into production Agent Core;
+- [ ] reject reuse of RequestID with different operation/payload hash;
+- [ ] return cached committed result for safe replay within the same compatible session epoch;
+- [ ] define which read-only operations may bypass journal persistence;
+- [ ] define journal retention and memory/disk bounds;
+- [ ] persist enough state for supervisor recovery policy where process loss occurs;
+- [ ] classify operations by replay policy;
+- [ ] prevent automatic retry of non-idempotent operations without proven outcome;
+- [ ] integrate correlation IDs and transaction IDs into journal entries;
+- [ ] emit diagnostic evidence for ambiguous transport loss.
+
+## Tests
+
+- [ ] committed mutation + lost response + same RequestID => mutation count remains one;
+- [ ] same RequestID + different payload => hard protocol error;
+- [ ] duplicate request while original is executing => deterministic dedup/wait/reject policy;
+- [ ] rollback result replay;
+- [ ] journal quota behavior;
+- [ ] process crash during each state transition;
+- [ ] real-NX feature creation replay does not create duplicate features.
+
+## Exit gate H2
+
+Fake-Agent and production Agent implement the same mutation replay contract, verified by a shared conformance suite.
+
+---
+
+# H3 — Canonical ObjectRef, leases, and fail-closed NX object resolution
+
+Priority: **P0**  
+Addresses: A-004, A-005, A-013  
+Target evidence: `E2 → E3`
+
+## Canonical handle
+
+Use one wire/runtime model everywhere:
+
+```text
+SessionID
+Epoch
+ObjectID
+Generation
+Kind
+LeaseScopeID
+```
+
+`NativeTag` may be diagnostics-only; it must not be trusted as cross-session identity.
+
+## Tasks
+
+- [ ] make one canonical ObjectRef definition the source of truth for Go protocol, Go proxies and C# Agent;
+- [ ] add generation to production wire protocol and registry;
+- [ ] increment generation/revoke identity where handle reuse could occur;
+- [ ] remove all `catch {}` fallbacks that convert invalid handles into work/display part or first body;
+- [ ] if a reference field is supplied and cannot be resolved, return an error before any NX mutation;
+- [ ] distinguish absent optional reference from invalid supplied reference;
+- [ ] enforce expected `Kind` on every resolver;
+- [ ] invalidate dependent handles when a part/component lifecycle invalidates them;
+- [ ] implement explicit lease scopes for query-created ephemeral handles;
+- [ ] add per-session handle quotas and per-request produced-handle limits;
+- [ ] add bulk release and scope release in public SDK;
+- [ ] avoid creating persistent handles for value-snapshot results when no object proxy is needed;
+- [ ] record registry size/high-watermark diagnostics.
+
+## Required adversarial tests
+
+- [ ] stale session handle;
+- [ ] stale epoch;
+- [ ] wrong generation;
+- [ ] wrong kind;
+- [ ] released handle;
+- [ ] closed-part handle;
+- [ ] handle from another worker;
+- [ ] body handle passed where part is expected;
+- [ ] explicitly invalid handle while a valid work part exists — operation must fail, never fall back;
+- [ ] repeated tree/body queries stay below defined registry bound after scope release;
+- [ ] fuzz reference decoding and lifecycle transition sequences.
+
+## Real-NX semantic gate
+
+For every invalid-reference mutation fixture, record before/after semantic state and prove zero unintended CAD changes.
+
+## Exit gate H3
+
+NXGO object identity is fail-closed, generation-aware and bounded for long-running workers.
+
+---
+
+# H4 — Unify Agent Core and remove production-only duplicate safety logic
+
+Priority: **P1**, but required before broader production claims  
+Addresses: A-010, A-011  
+Target evidence: `E2 → E3`
+
+## Target structure
+
+```text
+agent/
+  NXGO.Protocol/
+  NXGO.Agent.Core/
+  NXGO.Agent.NXAdapter/
+  NXGO.Agent.NXHost/
+```
+
+The runtime loaded/executed by real NX must consume the same Core primitives exercised by ordinary CI.
+
+## Tasks
+
+- [ ] eliminate duplicate `NxExecutor` implementation from bundled runtime;
+- [ ] eliminate duplicate frame codec/server implementation where possible;
+- [ ] eliminate duplicate SessionHealth implementation;
+- [ ] eliminate duplicate ObjectRegistry implementation;
+- [ ] eliminate duplicate BuilderScope implementation;
+- [ ] eliminate manual request dispatch parsing;
+- [ ] introduce strongly typed request/response DTOs;
+- [ ] use a real JSON serializer compatible with supported NX/.NET runtime;
+- [ ] make dispatch table explicit and capability-driven;
+- [ ] keep NX-specific adapters thin and release-aware;
+- [ ] keep bootstrap/journal entry point minimal;
+- [ ] make the production build fail if it bypasses canonical Core packages;
+- [ ] add cross-language golden protocol tests using production serializer;
+- [ ] add malformed/escaped/unicode payload corpus.
+
+## JSON/path test corpus
+
+Must include:
+
+- quotes in names;
+- backslashes;
+- braces inside strings;
+- Unicode/Cyrillic/CJK;
+- newline/control characters;
+- long Windows paths;
+- empty strings/null/omitted optional values;
+- nested payloads;
+- arrays with escaped content.
+
+## Exit gate H4
+
+There is one safety kernel. A bug fixed in Agent Core cannot remain unfixed in the production real-NX path because the production path uses that same implementation.
+
+---
+
+# H5 — Semantic CAD correctness, units, builders, save behavior
+
+Priority: **P0/P1**  
+Addresses: A-006, A-007, A-008, A-009  
+Target evidence: `E3 → E4`
+
+## H5.1 Canonical units contract
+
+Public domain API v0 uses explicit units and never relies on undocumented implicit conversion.
+
+Recommended initial contract:
+
+- length: part units or explicit `LengthUnit` in request/response;
+- area: square of declared length unit;
+- volume: cube of declared length unit;
+- mass: explicit mass unit;
+- density: explicit unit;
+- angles: radians internally, documented conversion helpers if exposed;
+- transforms: homogeneous/unit-aware conventions documented.
+
+## Tasks
+
+- [ ] write a unit table for every geometry protocol field;
+- [ ] replace magic UF unit conversions with named conversion functions/constants;
+- [ ] verify UF call parameter semantics against installed NX API docs/metadata;
+- [ ] include returned unit metadata where ambiguity is possible;
+- [ ] normalize `BoundingBox`, centroid, area, volume and mass consistently;
+- [ ] implement `Part.MassProperties` over all applicable bodies;
+- [ ] expose body-level and part-level mass properties as separate semantics;
+- [ ] define behavior for sheet bodies/non-solid bodies/mixed parts;
+- [ ] add density/material semantics instead of silently assuming a misleading mass value.
+
+## H5.2 Feature parameter honesty
+
+- [ ] every public parameter is either implemented and verified or rejected as unsupported;
+- [ ] implement/reject `BooleanOp` deterministically;
+- [ ] implement/reject `TargetBodyRef` deterministically;
+- [ ] validate dimensions/direction vectors before creating NX builders;
+- [ ] normalize zero/negative/tolerance edge cases;
+- [ ] add semantic postconditions after builder commit;
+- [ ] integrate required UpdateManager/update semantics per operation recipe.
+
+## H5.3 Builder lifecycle
+
+- [ ] all NX builders use canonical `BuilderScope`;
+- [ ] no same-builder retry after commit attempt;
+- [ ] destroy runs on success, NXException, cancellation path and validation failure;
+- [ ] add builder leak diagnostics where NX permits;
+- [ ] real-NX test builder failure followed by fresh-builder retry.
+
+## H5.4 Save/close/data durability
+
+- [ ] never swallow an explicitly requested save failure;
+- [ ] `Close(save=true)` returns error and leaves state diagnosable when save fails;
+- [ ] separate `Close`, `Save`, `SaveAs`, `ForceCloseDiscard` semantics;
+- [ ] stage externally published files before atomic publish where possible;
+- [ ] validate output exists/non-zero and matches intended part/sheet before reporting success;
+- [ ] propagate PartLoadStatus/PartSaveStatus diagnostics.
+
+## Independent semantic oracles
+
+For core geometry fixtures use at least two of:
+
+- known analytical geometry values;
+- direct NXOpen reference implementation fixture;
+- NX Check-Mate/validation where suitable;
+- exported neutral geometry inspected independently;
+- differential NXGO vs direct NXOpen results.
+
+## Mandatory real-NX fixtures
+
+### Geometry
+
+- [ ] 100 × 50 × 25 mm block: volume, area, centroid, bounding box;
+- [ ] inch-unit equivalent of same physical solid;
+- [ ] cylinder analytical fixture;
+- [ ] multi-body part aggregate mass properties;
+- [ ] body-level mass properties;
+- [ ] rollback restores zero-body initial state;
+- [ ] failed boolean operation leaves model unchanged/quarantined according to contract.
+
+### Parts
+
+- [ ] new/save/close/open;
+- [ ] forced save failure;
+- [ ] Unicode/path escaping;
+- [ ] stale handle after close;
+- [ ] work/display part does not mask invalid explicit ref.
 
 ### Assemblies
 
-- [x] component tree;
-- [x] add/remove component;
-- [x] basic transforms;
-- [ ] initial constraints;
-- [x] BOM-friendly metadata queries.
+- [ ] add/remove component semantic tree assertions;
+- [ ] transform correctness;
+- [ ] BOM quantity aggregation;
+- [ ] invalid component handle produces zero mutation.
 
-### Exit gate
+### Drafting
 
-- [x] Representative part/assembly workflows use only idiomatic Go domain API for common operations.
+- [ ] create/query sheet;
+- [ ] PDF output exists and passes basic artifact validation;
+- [ ] explicit unit/size checks;
+- [ ] invalid sheet/part ref fails closed.
+
+## Exit gate H5
+
+Core part/geometry/assembly/drafting v0 semantics pass on pinned NX 2512 with independent numerical/structural postconditions.
 
 ---
 
-## Phase 8 — Drafting/PMI automation v0 [IN PROGRESS: SHEETS + PDF EXPORT DELIVERED]
+# H6 — Real-NX evidence matrix, security, soak, and release re-entry gate
 
-### Tasks
+Priority: **P1**  
+Addresses: A-014, A-015  
+Target evidence: `E4 → E5`
 
-- [x] drawing sheet abstraction;
+## H6.1 Real-NX CI evidence
+
+- [ ] self-hosted workflow stores exact NX release/build;
+- [ ] retain test logs, syslog, Agent logs and semantic result manifest;
+- [ ] retain failure artifacts;
+- [ ] make release compatibility claims depend on a successful referenced run;
+- [ ] add pinned NX 2512 lane;
+- [ ] add pinned NX 2606 lane;
+- [ ] run the same high-value semantic suite on both;
+- [ ] generate machine-readable compatibility delta report;
+- [ ] fail when a claimed supported build has no current evidence.
+
+## H6.2 Named-pipe security
+
+- [ ] explicit Windows DACL scoped to intended user/service identity;
+- [ ] validate pipe ownership/peer expectations where practical;
+- [ ] supervisor generates high-entropy worker secret/nonce;
+- [ ] handshake binds client/worker/session identity;
+- [ ] operation allowlist remains default;
+- [ ] hardened mode disables journal/reflection/raw execution escape hatches;
+- [ ] unauthorized local client test;
+- [ ] malformed/flooding client test;
+- [ ] payload and pending-request quotas.
+
+## H6.3 Reliability campaign
+
+- [ ] 8-hour real-NX warm-worker soak on representative workload;
+- [ ] repeated create/save/close cycles;
+- [ ] repeated assembly enumeration;
+- [ ] repeated drawing/PDF cycles;
+- [ ] worker memory high-watermark tracking;
+- [ ] registry size high-watermark tracking;
+- [ ] pipe/goroutine/thread leak tracking;
+- [ ] crash-recovery cycle campaign;
+- [ ] queue saturation behavior;
+- [ ] log rotation/truncation campaign;
+- [ ] forced NX termination at defined mutation phases.
+
+## H6.4 Performance baseline
+
+Publish at least:
+
+- no-op/health RPC p50/p95/p99;
+- batch vs N+1 query cost;
+- part open/save/close timings;
+- body/tree enumeration timings;
+- startup/recycle timing;
+- IPC payload throughput;
+- memory growth during soak.
+
+Performance is secondary to correctness: no optimization may weaken outcome, object-lifetime or thread-safety invariants.
+
+## Hardening Gate H6 — criteria to unfreeze feature expansion
+
+All must be true:
+
+- [ ] H1 protocol/cancellation gate passed;
+- [ ] H2 production idempotency gate passed;
+- [ ] H3 fail-closed ObjectRef gate passed;
+- [ ] H4 canonical Agent Core used by real NX;
+- [ ] H5 semantic geometry/part/assembly/drafting v0 passed on NX 2512;
+- [ ] same core semantic suite passed on NX 2606 or an explicit documented temporary exception exists;
+- [ ] named-pipe ACL/security baseline passed;
+- [ ] no known P0 correctness issue remains;
+- [ ] soak shows no unbounded resource growth in the defined workload;
+- [ ] retained real-NX evidence exists for compatibility claims.
+
+Only after this gate may broad NX API expansion resume.
+
+---
+
+# 5. API scanner and generated raw layer — completion program
+
+Current state: scanner/search/diff foundation exists; generated raw layer is incomplete.
+
+## Tasks
+
+- [x] scan approved NXOpen assemblies/metadata;
+- [x] deterministic normalized manifest foundation;
+- [x] type/method search and inspection;
+- [x] basic manifest diff;
+- [ ] define canonical overload-safe signature format;
+- [ ] compute stable API signature IDs;
+- [ ] include parameter type, ref/out, generic arity, static/instance and return type in diff;
+- [ ] detect changed overloads, not only added/removed names;
+- [ ] capture enum members and relevant constants;
+- [ ] capture inheritance/interface relationships needed for binding generation;
+- [ ] generate Go raw types/methods;
+- [ ] generate C# dispatch glue;
+- [ ] generate capability IDs from bindings;
+- [ ] trace every generated symbol to source assembly/release/signature ID;
+- [ ] produce reproducible `2512 -> 2606` compatibility report;
+- [ ] compare scanner results against NX Open Reporter output on a representative subset where tooling is available;
+- [ ] ensure no Siemens binaries are committed or published.
+
+## Exit gate
+
+A new supported NX build can be scanned and raw bindings regenerated deterministically; overload/signature breaking changes are identified reproducibly and mapped to capabilities.
+
+---
+
+# 6. Domain API roadmap after Hardening Gate
+
+# D1 — Parts and attributes
+
+- [x] open/new/save/close foundation;
+- [x] work/display part queries foundation;
+- [x] units/basic metadata foundation;
+- [ ] batch attributes;
+- [ ] explicit SaveAs/export semantics;
+- [ ] bulk metadata query;
+- [ ] part dependency/load-status diagnostics.
+
+# D2 — Modeling
+
+- [x] body summaries foundation;
+- [x] block/cylinder foundation;
+- [x] bounding box/mass properties foundation subject to H5 correction;
+- [ ] semantic boolean create/unite/subtract/intersect;
+- [ ] semantic hole;
+- [ ] datum/plane/axis basics;
+- [ ] sketch/profile strategy;
+- [ ] extrude/revolve;
+- [ ] fillet/chamfer;
+- [ ] pattern;
+- [ ] expression/parameter API;
+- [ ] bulk geometry analysis.
+
+Every operation requires:
+
+- input validation;
+- BuilderScope recipe;
+- UpdateManager recipe;
+- transaction policy;
+- semantic postcondition;
+- capability/version mapping;
+- real-NX fixture.
+
+# D3 — Assemblies
+
+- [x] tree foundation;
+- [x] add/remove component foundation;
+- [x] basic transforms foundation;
+- [x] BOM-friendly metadata foundation;
+- [ ] constraints;
+- [ ] arrangements/reference sets;
+- [ ] suppression/load-state semantics;
+- [ ] interpart references policy;
+- [ ] large-assembly bulk query path.
+
+# D4 — Drafting / PMI
+
+- [x] drawing sheet foundation;
+- [x] PDF/DXF export foundation;
 - [ ] base/projected/isometric/section views;
-- [ ] automatic view-layout strategy interface;
-- [ ] PMI retrieval/association;
-- [ ] centerlines;
-- [ ] hole callouts;
-- [ ] title block attribute mapping;
-- [ ] parts list/balloons for assemblies;
-- [x] PDF/DXF export;
+- [ ] automatic view layout interface;
+- [ ] PMI retrieval and association;
+- [ ] dimensions/centerlines/hole callouts;
+- [ ] title-block attribute mapping;
+- [ ] assembly parts list/balloons;
 - [ ] drawing validation report;
-- [ ] initial ESKD-oriented policy layer without hardcoding organization-specific standards into core.
+- [ ] ESKD-oriented policy plugin without organization-specific rules in core;
+- [ ] semantic + visual regression fixtures.
 
-### Tests
+# D5 — Workflow/declarative API
 
-- semantic golden drawings;
-- visual layout regression;
-- changed-model update test;
-- no orphan annotation checks;
-- title-block/BOM consistency;
-- 2512/2606 behavior comparison.
-
-### Exit gate
-
-A controlled production-like part can produce a reviewable drawing package from one high-level Go request.
-
----
-
-## Phase 9 — Workflow/declarative API [DELIVERED]
-
-### Tasks
-
-- [x] operation plan schema;
-- [x] `GenerateDrawing` workflow;
-- [x] `PrepareReleasePackage`;
-- [x] `ValidatePart` / `ValidateAssembly`;
-- [ ] dry-run/planning where meaningful;
-- [ ] workflow progress events;
-- [x] staged outputs + manifest;
-- [ ] retry policy limited to safe/idempotent boundaries.
-
-### Exit gate
-
-- [x] Applications can describe coarse CAD jobs without orchestrating individual NX operations.
+- [x] coarse operation-plan foundation;
+- [x] PrepareReleasePackage foundation;
+- [x] ValidatePart / ValidateAssembly foundation;
+- [x] staged-output manifest foundation;
+- [ ] dry-run/planning;
+- [ ] progress events;
+- [ ] compensation/rollback reporting;
+- [ ] safe retry planner based on mutation classification;
+- [ ] workflow resume semantics;
+- [ ] deterministic release manifest with input/output hashes.
 
 ---
 
-## Phase 10 — Multi-version compatibility hardening
+# 7. Multi-version compatibility
 
-### Tasks
+Target initial families:
+
+- NX / Designcenter 2512;
+- NX / Designcenter 2606.
+
+## Tasks
 
 - [ ] formal compatibility matrix;
-- [ ] validated pinned 2512 build;
-- [ ] validated pinned 2606 build;
-- [x] initial `nxctl test matrix` command accepts explicit side-by-side NX roots for real smoke;
-- [ ] release adapter cleanup;
+- [ ] exact pinned build manifests;
+- [ ] side-by-side discovery test;
+- [ ] same domain conformance suite on both releases;
 - [ ] capability fallback tests;
-- [ ] automated NX upgrade report;
-- [ ] document deprecation windows.
+- [ ] release adapter isolation;
+- [ ] automated API scan diff;
+- [ ] automated behavioral diff report;
+- [ ] deprecation policy/windows;
+- [ ] explicit unsupported-capability errors rather than silent fallback.
 
-### Exit gate
+## Exit gate
 
-Same high-level test suite passes on two release families with explicit, documented exceptions only.
+Supported-version claims are based on semantic conformance evidence, not only successful assembly loading or compilation.
 
 ---
 
-## Phase 11 — Advanced escape hatches
+# 8. Advanced escape hatches
 
-### Tasks
+Do not start broad implementation before H6.
 
 - [ ] typed UF exposure strategy;
 - [ ] restricted reflection invocation;
 - [ ] external NXOpen library execution policy;
-- [ ] journal execution/developer mode;
+- [ ] journal execution developer mode;
 - [ ] recorded-journal analysis prototype;
-- [ ] wrapper recipe generator prototype.
-
-### Gate
-
-Security tests prove hardened mode disables dangerous escape hatches.
+- [ ] wrapper recipe generator prototype;
+- [ ] hardened-mode deny policy;
+- [ ] security tests proving dangerous capabilities are unavailable by default.
 
 ---
 
-## Phase 12 — Reliability/performance campaign
+# 9. Supervisor / lifecycle / observability
 
-### Tasks
+Existing foundation includes discovery, worker launch, status/doctor, syslog harvesting and worker diagnostics. Continue with:
 
-- [ ] benchmark no-op production IPC;
-- [ ] batch vs N+1 benchmarks;
-- [ ] large assembly enumeration benchmark;
-- [ ] repeated worker memory/resource soak;
-- [ ] crash recovery soak;
-- [ ] handle leak detector;
-- [ ] queue saturation behavior;
-- [ ] log throughput tests;
-- [ ] profile Go supervisor and Agent hotspots;
-- [x] initial Fake-Agent `chaos`, `soak`, and `perf` command entry points (simulation only).
-
-### Exit gate
-
-Published performance baseline and no unbounded growth in defined soak workload.
+- [ ] explicit worker state machine: starting / ready / busy / draining / dirty / poisoned / lost / stopped;
+- [ ] quarantine reason codes;
+- [ ] outcome-unknown propagation from protocol to supervisor;
+- [ ] graceful drain before recycle where safe;
+- [ ] orphan cleanup with ownership verification;
+- [ ] structured process manifest with exact Agent/protocol/NX versions;
+- [ ] request/transaction/session/run correlation across Go/Agent/NX syslog;
+- [ ] artifact manifest containing hashes and test metadata;
+- [ ] crash signature classification;
+- [ ] resource high-watermark telemetry;
+- [ ] optional worker recycling thresholds based on measured soak evidence.
 
 ---
 
-## Phase 13 — Release engineering
+# 10. Testing architecture
 
-### Tasks
+NXGO uses a layered verification ladder.
 
-- [ ] semantic versioning policy;
-- [ ] signed/checksummed release artifacts;
-- [ ] SBOM;
-- [ ] compatibility table;
-- [ ] install/update documentation;
-- [ ] examples;
-- [ ] migration guide;
-- [ ] trademark/legal review;
-- [ ] confirm Siemens licensing/redistribution obligations for deployment model.
+## Tier T0 — static and compile
 
-### v1 gate
+- formatting;
+- `go vet`;
+- race-enabled Go tests;
+- .NET compile/tests;
+- invariant policy;
+- generated-code reproducibility.
 
-- stable high-level Go API for initial domains;
-- documented raw escape hatch;
-- real NX CI on supported builds;
-- crash/log diagnostics;
-- security baseline;
-- no proprietary Siemens binaries in public release;
-- end-to-end examples pass from clean setup.
+## Tier T1 — unit/property/fuzz
+
+- protocol codec;
+- response correlation;
+- object references;
+- session-health transitions;
+- transaction planner;
+- capability negotiation;
+- unit conversion;
+- API signature normalization.
+
+## Tier T2 — production transport + Fake Agent
+
+- actual framed transport;
+- same DTO/serializer contract;
+- idempotency conformance;
+- timeout/late response;
+- broken pipe;
+- backpressure;
+- chaos and outcome ambiguity.
+
+## Tier T3 — warm real NX
+
+Use for high-frequency development validation:
+
+- part operations;
+- geometry;
+- assembly;
+- drafting;
+- transaction rollback;
+- semantic assertions.
+
+## Tier T4 — isolated destructive real NX
+
+Use fresh NX process for:
+
+- poison/session loss;
+- process kill;
+- hung operations;
+- crash recovery;
+- malformed client/security;
+- ambiguous mutation outcomes.
+
+## Tier T5 — compatibility matrix
+
+Run the same semantic suite across every claimed NX release family.
+
+## Tier T6 — reliability campaigns
+
+- fuzz;
+- mutation testing;
+- metamorphic CAD tests;
+- direct-NXOpen differential tests;
+- chaos;
+- soak;
+- performance.
 
 ---
 
-# Cross-cutting backlog
+# 11. Required mutation-testing targets
 
-## Documentation
+## Go
 
-- [ ] examples cookbook;
-- [ ] troubleshooting guide based on real failures;
-- [ ] NX error code mapping notes;
-- [ ] ESKD drawing policy plugin specification;
-- [ ] architecture diagrams as Mermaid/PlantUML if useful;
-- [x] Engineering Standard, Testing Playbook, invariant catalog, executable quality-gate guide and Definition of Done;
-- [x] Agent implementation/build boundary documentation.
+- protocol response correlation;
+- request-id handling;
+- timeout/quarantine logic;
+- capability negotiation;
+- ObjectRef validation;
+- transaction/outcome classification;
+- unit conversion;
+- supervisor recovery.
 
-## Developer experience
+## C# Agent Core
 
-- [ ] `nxctl init` project scaffolding;
-- [ ] local production-protocol Fake Agent mode;
-- [ ] generated API searchable docs;
-- [ ] VS Code/IDE task examples;
-- [x] one-command fast developer gate (`nxctl test fast`);
-- [x] one-command preliminary real-NX smoke (`nxctl test nx`) with fail-closed environment checks;
-- [ ] one-command Agent Core test integrated into `nxctl test fast` (currently CI runs it as adjacent required step);
-- [ ] warm-NX `--watch` development loop.
+- executor thread checks;
+- cancellation-before-start;
+- idempotency journal transitions;
+- ObjectRegistry validation;
+- BuilderScope cleanup;
+- transaction rollback health transitions;
+- dispatch validation;
+- serializer/error mapping.
 
-## Testing campaigns
+Mutation score is not a vanity metric. Surviving mutations in safety-critical branches become explicit remediation items.
 
-- [x] exhaustive short-sequence session-health model test;
-- [x] native Go fuzz target for stale epoch object references;
-- [x] bootstrap protocol framing fuzz target;
-- [ ] broader typed protocol/parser fuzz corpus;
-- [ ] Go mutation testing campaign for session/retry/capability logic;
-- [ ] C# mutation testing for Agent safety primitives;
-- [ ] real-NX semantic fixture suite;
-- [ ] metamorphic CAD tests;
-- [ ] direct-NXOpen vs NXGO differential fixtures;
-- [ ] Check-Mate independent oracle integration;
-- [ ] destructive isolated-NX chaos suite;
-- [ ] long-running real-NX resource soak.
+---
 
-## Future domains
+# 12. Performance strategy
 
-- [ ] CAM;
-- [ ] routing;
-- [ ] CAE/Simcenter-specific adapters;
-- [ ] Teamcenter-managed mode;
-- [ ] remote worker gateway;
-- [ ] worker pool/scheduler.
+Do not optimize individual NXOpen calls prematurely. First eliminate N+1 IPC and repeated object marshaling.
 
-# Definition of done for every implementation iteration
+Preferred order:
+
+1. semantic bulk operations;
+2. batch protocol calls;
+3. value snapshots instead of handles when possible;
+4. cache immutable release/capability metadata;
+5. reduce Agent allocations only after profiling;
+6. recycle workers only when soak data demonstrates benefit.
+
+Performance regressions must not weaken synchronization, validation, rollback or evidence generation.
+
+---
+
+# 13. Security baseline
+
+Before v1:
+
+- [ ] per-user/service pipe ACL;
+- [ ] random per-worker authentication material;
+- [ ] bounded frame size;
+- [ ] bounded pending request count;
+- [ ] bounded registry handles;
+- [ ] bounded logs/event buffers;
+- [ ] allowlisted operations;
+- [ ] safe filesystem output policy;
+- [ ] hardened mode without arbitrary journal/library/reflection execution;
+- [ ] no proprietary Siemens assemblies in public artifacts;
+- [ ] dependency/SBOM generation;
+- [ ] release checksums/signatures;
+- [ ] threat-model review for shared workstation/self-hosted runner scenarios.
+
+---
+
+# 14. Developer experience
+
+After hardening:
+
+- [ ] `nxctl init` scaffolding;
+- [ ] production-protocol local Fake Agent;
+- [ ] generated searchable API documentation;
+- [ ] `nxctl doctor --json`;
+- [ ] `nxctl capabilities`;
+- [ ] `nxctl api scan/diff/find/inspect` completion;
+- [ ] `nxctl test fast` includes every NX-independent Agent Core gate;
+- [ ] warm-NX `nxctl test --watch` loop;
+- [ ] fixture generator;
+- [ ] one-command compatibility matrix on configured self-hosted runners;
+- [ ] troubleshooting command that bundles Agent/NX/syslog/manifests without proprietary binaries.
+
+Public SDK requirements:
+
+- idiomatic Go;
+- `context.Context` on operations that may block;
+- typed errors with `errors.Is/As` support;
+- no Siemens types in public packages;
+- no stringly typed capability checks in ordinary user code;
+- explicit unsupported feature errors;
+- no accepted-but-ignored parameters;
+- stable semantic abstractions over NX builder details.
+
+---
+
+# 15. Future domains — post-v1 kernel
+
+Only after H6 and stable initial domain release:
+
+- CAM;
+- routing;
+- CAE/Simcenter adapters;
+- Teamcenter-managed mode;
+- remote worker gateway;
+- worker pool/scheduler;
+- enterprise policy/authorization;
+- declarative drawing/package automation at organization scale.
+
+---
+
+# 16. Release engineering
+
+## v0.x hardening releases
+
+- unstable API allowed with migration notes;
+- every release lists evidence level per domain;
+- no `production-ready` wording before H6.
+
+## v1 release gate
+
+All required:
+
+- [ ] H6 passed;
+- [ ] stable initial public Go API;
+- [ ] production Agent uses canonical tested Core;
+- [ ] no known P0 correctness defect;
+- [ ] safe mutation outcome/idempotency contract;
+- [ ] fail-closed generation-aware object identity;
+- [ ] semantic fixtures pass on supported NX releases;
+- [ ] real-NX CI evidence retained;
+- [ ] documented raw escape hatch;
+- [ ] security baseline complete;
+- [ ] crash/log diagnostics complete;
+- [ ] compatibility table complete;
+- [ ] examples pass from clean setup;
+- [ ] SBOM/checksums/signing policy complete;
+- [ ] Siemens licensing/redistribution review complete;
+- [ ] no proprietary Siemens binary is published.
+
+---
+
+# 17. Execution order
+
+The remediation sequence is intentionally strict:
+
+```text
+H0 evidence baseline
+    ↓
+H1 protocol + cancellation
+    ↓
+H2 idempotency + outcome journal
+    ↓
+H3 ObjectRef + leases
+    ↓
+H4 one production Agent Core
+    ↓
+H5 semantic CAD correctness
+    ↓
+H6 NX2512/NX2606 + security + soak
+    ↓
+resume API expansion
+    ↓
+complete generated raw layer
+    ↓
+expand Modeling/Assembly/Drafting/PMI
+    ↓
+advanced domains
+    ↓
+v1
+```
+
+Some implementation work may overlap, but **exit gates may not be skipped**.
+
+---
+
+# 18. Recommended first implementation batch
+
+The first coding batch after this plan update should be limited to the highest-risk correctness layer:
+
+1. add regression test reproducing timeout-A / late-response-A / request-B corruption;
+2. redesign Go pipe client around one receive loop and strict request-ID correlation;
+3. add `ErrOutcomeUnknown` and session quarantine semantics;
+4. add regression test proving cancelled-before-start NX work never executes later;
+5. remove resolver fallback from invalid explicit ObjectRefs;
+6. add generation to the canonical wire reference;
+7. add regression tests for stale/wrong-kind/foreign refs while a valid work part exists;
+8. fix/lock public geometry unit contract and analytical fixtures;
+9. correct part-level multi-body mass properties;
+10. make save-on-close fail loudly on save error;
+11. reject currently ignored feature parameters until implemented;
+12. begin migration of real AgentWorker onto canonical Agent Core.
+
+Do not bundle broad new NX feature coverage into this batch.
+
+---
+
+# 19. Definition of done for every implementation iteration
 
 An iteration is complete only when:
 
-1. scope is implemented;
-2. applicable `NXGO-INV-*` IDs are identified and compliance metadata is updated when enforcement changes;
-3. relevant unit/contract/property/fuzz tests pass;
-4. required real NX tests pass for affected validated builds before making real-NX compatibility claims;
-5. semantic CAD postconditions are checked for CAD-affecting mutations;
-6. logs contain correlation data where runtime integration exists;
-7. resource cleanup/session health is verified;
-8. docs/API examples are updated;
-9. new architectural findings update this plan/ADR/invariant catalog;
-10. no Siemens proprietary artifact is committed;
-11. `main` remains buildable for non-NX CI;
-12. the commit clearly distinguishes simulated/core evidence from real-NX evidence;
-13. the change satisfies `docs/DEFINITION_OF_DONE.md`.
+1. scope is implemented in the production path, not only a Fake Agent/model;
+2. applicable `NXGO-INV-*` IDs and audit findings are identified;
+3. unit/contract/property/fuzz tests pass;
+4. production transport tests pass where applicable;
+5. required real-NX tests pass before making real-NX claims;
+6. CAD mutations have semantic postconditions;
+7. invalid/stale references fail before mutation;
+8. timeout/cancellation outcome is explicit and safe;
+9. builder/object/resource cleanup is verified;
+10. logs contain request/session/transaction correlation;
+11. evidence artifacts are retained for claimed compatibility;
+12. documentation and capability manifests are updated;
+13. no accepted public parameter is silently ignored;
+14. no proprietary Siemens artifact is committed;
+15. non-NX CI remains deterministic and green;
+16. the change distinguishes simulated evidence from real-NX evidence;
+17. architectural findings update this plan/ADR/invariant catalog;
+18. the change satisfies `docs/DEFINITION_OF_DONE.md`.
+
+---
+
+# 20. Current maturity statement after 2026-09-02 audit
+
+NXGO has a strong architecture and a meaningful implementation foundation, but the execution kernel is in **production-hardening**, not production-ready, state.
+
+The project should be treated as:
+
+- architecture: advanced;
+- no-NX test architecture: advanced;
+- domain API: early but usable for controlled development;
+- real-NX semantic evidence: must be rebuilt under the H1-H6 gates;
+- production mutation safety: not yet release-grade;
+- broad NXOpen coverage: intentionally secondary until the hardening gate passes.
+
+The shortest path to a strong NXGO is not adding more methods. It is proving that a small, representative vertical slice — `Connect → Part → Geometry → Transaction → Save → Failure/Recovery` — is correct under timeout, stale handles, lost responses, process failure and two supported NX releases. Once that kernel is trustworthy, the existing architecture can scale safely to much broader Siemens NX automation.
