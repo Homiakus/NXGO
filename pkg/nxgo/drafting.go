@@ -36,6 +36,9 @@ type ExportPDFResult struct {
 }
 
 func (p *Part) CreateDrawingSheet(ctx context.Context, params CreateSheetParams) (*DrawingSheet, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	if params.Height == 0 {
 		params.Height = 297.0 // A3 height mm
 	}
@@ -90,6 +93,9 @@ func (p *Part) CreateDrawingSheet(ctx context.Context, params CreateSheetParams)
 }
 
 func (p *Part) ExportPDF(ctx context.Context, params ExportPDFParams) (*ExportPDFResult, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.DraftingExportPDFRequest{
 		PartRef:       &p.Ref,
 		OutputPDFPath: params.OutputPDFPath,
@@ -124,6 +130,9 @@ func (p *Part) ExportPDF(ctx context.Context, params ExportPDFParams) (*ExportPD
 }
 
 func (p *Part) DrawingSheets(ctx context.Context) ([]*DrawingSheet, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.DraftingQuerySheetsRequest{
 		PartRef: &p.Ref,
 	})
