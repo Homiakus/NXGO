@@ -45,6 +45,9 @@ type BOMItem struct {
 }
 
 func (p *Part) AddComponent(ctx context.Context, params AddComponentParams) (*Component, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	if params.Orientation == (Matrix3D{}) {
 		params.Orientation = IdentityMatrix()
 	}
@@ -88,6 +91,9 @@ func (p *Part) AddComponent(ctx context.Context, params AddComponentParams) (*Co
 }
 
 func (p *Part) ComponentTree(ctx context.Context) (*ComponentNode, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.AssemblyQueryTreeRequest{
 		AssemblyPartRef: &p.Ref,
 	})
@@ -131,6 +137,9 @@ func convertNodeWire(w protocol.AssemblyComponentNodeWire) ComponentNode {
 }
 
 func (p *Part) BOM(ctx context.Context) ([]BOMItem, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.AssemblyQueryBOMRequest{
 		AssemblyPartRef: &p.Ref,
 	})
@@ -168,6 +177,9 @@ func (p *Part) BOM(ctx context.Context) ([]BOMItem, error) {
 }
 
 func (c *Component) Remove(ctx context.Context) error {
+	if err := c.validate(); err != nil {
+		return err
+	}
 	reqData, err := protocol.EncodePayload(protocol.AssemblyRemoveComponentRequest{
 		AssemblyPartRef: &c.part.Ref,
 		ComponentRef:    c.Ref,
