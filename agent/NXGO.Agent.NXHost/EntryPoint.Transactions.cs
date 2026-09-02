@@ -25,8 +25,12 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
-            Journal.MarkStarted(requestId);
+
+            // Capacity is a pure Core preflight. Do it before MarkStarted so a
+            // full ledger is a cacheable failed-before-start request rather
+            // than an ambiguous NX mutation.
             Transactions.EnsureCanBegin();
+            Journal.MarkStarted(requestId);
 
             var name = string.IsNullOrWhiteSpace(requestedName)
                 ? "NXGO_Tx_" + Guid.NewGuid().ToString("N").Substring(0, 8)
@@ -40,9 +44,10 @@ public static partial class EntryPoint
             }
             catch
             {
-                // The Core capacity preflight ran immediately before creating
-                // the native mark, but if ledger insertion still fails for an
-                // unexpected reason, do not leak the NX undo mark.
+                // The capacity preflight ran immediately before creating the
+                // native mark on the same serialized NX thread. If insertion
+                // still fails unexpectedly, best-effort remove the native mark
+                // and let MapMutation quarantine the uncertain worker.
                 try { session.DeleteUndoMark(mark, name); } catch { }
                 throw;
             }
@@ -67,11 +72,15 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+
+            // Take is NX-independent and atomic. It intentionally happens
+            // before MarkStarted: an unknown/already-consumed TxID has not
+            // touched NX and must be recorded as failed-before-start. Because
+            // all queued work is drained on one NX thread, only one request can
+            // successfully claim the transaction.
+            var tx = Transactions.Take(txId);
             Journal.MarkStarted(requestId);
 
-            // Take is atomic and runs on the serialized NX thread, so only one
-            // commit/rollback can ever consume this native undo mark.
-            var tx = Transactions.Take(txId);
             try
             {
                 session.DeleteUndoMark(tx.Mark, tx.Name);
@@ -104,8 +113,11 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
-            Journal.MarkStarted(requestId);
+
+            // Claim before MarkStarted for the same reason as commit: missing
+            // TxID is a deterministic pre-NX rejection, not outcome-unknown.
             var tx = Transactions.Take(txId);
+            Journal.MarkStarted(requestId);
 
             // If UndoToMark throws, MapMutation classifies the started mutation
             // as OUTCOME_UNKNOWN and marks the worker lost. Reusing a session
