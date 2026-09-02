@@ -27,6 +27,7 @@ public sealed class JsonWireCodec
         MissingMemberHandling = MissingMemberHandling.Ignore,
         NullValueHandling = NullValueHandling.Include,
         StringEscapeHandling = StringEscapeHandling.Default,
+        Converters = new List<JsonConverter> { new PlainObjectJsonConverter() },
     };
 
     private readonly int _maxPayloadBytes;
