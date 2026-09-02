@@ -12,6 +12,8 @@ namespace NXGO.Agent.NXHost;
 
 public static partial class EntryPoint
 {
+    private const int MaxProducedHandlesPerRequest = 256;
+
     private static Task<byte[]> StartCreateBlock(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "part_ref", "Part");
@@ -43,11 +45,11 @@ public static partial class EntryPoint
                 var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
                 var bodies = feature.GetBodies();
                 var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
-                var featureHandle = Registry.Register(feature, "Feature");
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
                 object bodyWire = new Dictionary<string, object>();
                 if (body != null)
                 {
-                    var bodyHandle = Registry.Register(body, "Body");
+                    var bodyHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
                     bodyWire = FormatHandle(bodyHandle, body);
                 }
 
@@ -93,11 +95,11 @@ public static partial class EntryPoint
                 var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
                 var bodies = feature.GetBodies();
                 var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
-                var featureHandle = Registry.Register(feature, "Feature");
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
                 object bodyWire = new Dictionary<string, object>();
                 if (body != null)
                 {
-                    var bodyHandle = Registry.Register(body, "Body");
+                    var bodyHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
                     bodyWire = FormatHandle(bodyHandle, body);
                 }
 
@@ -122,6 +124,10 @@ public static partial class EntryPoint
             Health.RequireReusable();
             var bodies = new List<Body>();
             foreach (Body body in part.Bodies) bodies.Add(body);
+            if (bodies.Count > MaxProducedHandlesPerRequest)
+            {
+                throw new HandleScopeCapacityException(requestId, MaxProducedHandlesPerRequest);
+            }
             if (Registry.Count + bodies.Count > Registry.Capacity)
             {
                 throw new HandleRegistryCapacityException(Registry.Capacity);
@@ -130,7 +136,12 @@ public static partial class EntryPoint
             var result = new List<object>();
             foreach (var body in bodies)
             {
-                var handle = Registry.Register(body, "Body", requestId);
+                var handle = Registry.Register(
+                    body,
+                    "Body",
+                    leaseScopeId: requestId,
+                    ownerObjectId: partHandle.ObjectId,
+                    leaseScopeLimit: MaxProducedHandlesPerRequest);
                 var faceCount = 0;
                 foreach (Face _ in body.GetFaces()) faceCount++;
                 var edgeCount = 0;
