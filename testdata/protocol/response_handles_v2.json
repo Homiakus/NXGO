@@ -1,0 +1,34 @@
+{
+  "request_id": "req-handles-001",
+  "status": "OK",
+  "payload": {
+    "feature_name": "BLOCK(1)",
+    "feature_type": "BLOCK"
+  },
+  "produced_handles": [
+    {
+      "session_id": "nxgo-session-a",
+      "epoch": 7,
+      "object_id": "obj-11",
+      "generation": 3,
+      "kind": "Feature",
+      "native_tag": 101,
+      "lease_scope_id": "req-handles-001"
+    },
+    {
+      "session_id": "nxgo-session-a",
+      "epoch": 7,
+      "object_id": "obj-12",
+      "generation": 5,
+      "kind": "Body",
+      "native_tag": 102,
+      "lease_scope_id": "req-handles-001"
+    }
+  ],
+  "timing": {
+    "queue_wait_ms": 1,
+    "execution_ms": 12,
+    "serialize_ms": 1,
+    "total_duration_ms": 14
+  }
+}
