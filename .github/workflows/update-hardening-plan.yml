@@ -135,9 +135,9 @@ jobs:
           PY
       - name: Verify status block
         run: |
-          grep -q 'H1 — protocol sequencing / cancellation — **E2 substantially complete, E3 pending**' MASTER_PLAN.md
-          grep -q 'H4 — Agent Core consolidation — **OPEN**' MASTER_PLAN.md
-          grep -q 'durable journal state across Agent/NX process loss' MASTER_PLAN.md
+          grep -Fq 'H1 — protocol sequencing / cancellation — **E2 substantially complete, E3 pending**' MASTER_PLAN.md
+          grep -Fq 'H4 — Agent Core consolidation — **OPEN**' MASTER_PLAN.md
+          grep -Fq 'durable journal state across Agent/NX process loss' MASTER_PLAN.md
       - name: Commit living plan update
         run: |
           git config user.name 'github-actions[bot]'
