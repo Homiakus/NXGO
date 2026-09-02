@@ -1,0 +1,44 @@
+name: apply-protocol-runtime-preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/protocol_runtime_preflight.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply deterministic protocol runtime preflight
+        run: python3 tools/apply_protocol_runtime_preflight.py
+      - name: Verify runtime dependency coverage
+        run: |
+          grep -Fq 'Newtonsoft.Json.dll' internal/supervisor/worker.go
+          grep -Fq 'NXGO.Protocol.dll' internal/supervisor/worker.go
+          grep -Fq 'NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj' cmd/nxctl/main.go
+          grep -Fq 'supervisor.AgentModeCanonical' tests/nx/compiled_host_test.go
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit canonical runtime preflight
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add internal/supervisor/worker.go cmd/nxctl/main.go tests/nx/compiled_host_test.go
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(h4): require full canonical protocol runtime'
+          git push origin HEAD:main
