@@ -5,16 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 	"github.com/Homiakus/NXGO/internal/transport/pipe"
 )
 
 var (
-	ErrSessionClosed   = errors.New("nxgo session is closed")
-	ErrNullObjectRef   = errors.New("object reference is nil")
-	ErrStaleObjectRef  = errors.New("object reference is stale or belongs to a different session/epoch")
+	ErrSessionClosed  = errors.New("nxgo session is closed")
+	ErrNullObjectRef  = errors.New("object reference is nil")
+	ErrStaleObjectRef = errors.New("object reference is stale or belongs to a different session/epoch")
 )
 
 type SessionInfo struct {
@@ -46,7 +45,7 @@ func Connect(ctx context.Context, pipePath string) (*Session, error) {
 		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
 		SDKVersion:      "v0.1.0",
 		ClientPID:       os.Getpid(),
-		Nonce:           fmt.Sprintf("nonce-%d", time.Now().UnixNano()),
+		Nonce:           newHandshakeNonce(),
 	})
 	if err != nil {
 		_ = client.Close()
@@ -85,7 +84,7 @@ func (s *Session) NXRelease() string {
 
 func (s *Session) Ping(ctx context.Context) error {
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-ping-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("nx.ping"),
 		Op:        "nx.ping",
 	})
 	if err != nil {
@@ -99,7 +98,7 @@ func (s *Session) Ping(ctx context.Context) error {
 
 func (s *Session) Info(ctx context.Context) (*SessionInfo, error) {
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-info-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("session.info"),
 		Op:        "session.info",
 	})
 	if err != nil {
@@ -121,7 +120,7 @@ func (s *Session) ReleaseObjects(ctx context.Context, refs ...protocol.ObjectHan
 		return err
 	}
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-rel-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("object.release"),
 		Op:        "object.release",
 		Payload:   reqData,
 	})
