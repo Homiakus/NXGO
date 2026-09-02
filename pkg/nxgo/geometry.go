@@ -2,8 +2,6 @@ package nxgo
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
@@ -76,7 +74,7 @@ func (p *Part) CreateBlock(ctx context.Context, params BlockParams) (*Feature, e
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-block-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("feature.create_block"),
 		Op:        "feature.create_block",
 		Payload:   reqData,
 	})
@@ -116,7 +114,7 @@ func (p *Part) CreateCylinder(ctx context.Context, params CylinderParams) (*Feat
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-cyl-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("feature.create_cylinder"),
 		Op:        "feature.create_cylinder",
 		Payload:   reqData,
 	})
@@ -150,7 +148,7 @@ func (p *Part) Bodies(ctx context.Context) ([]*Body, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-bodies-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("part.query_bodies"),
 		Op:        "part.query_bodies",
 		Payload:   reqData,
 	})
@@ -190,7 +188,7 @@ func (p *Part) MassProperties(ctx context.Context) (*MassProperties, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-mass-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("geometry.query_mass_properties.part"),
 		Op:        "geometry.query_mass_properties",
 		Payload:   reqData,
 	})
@@ -224,7 +222,7 @@ func (p *Part) BoundingBox(ctx context.Context) (*BoundingBox, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-bbox-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("geometry.query_bounding_box.part"),
 		Op:        "geometry.query_bounding_box",
 		Payload:   reqData,
 	})
@@ -256,7 +254,7 @@ func (b *Body) MassProperties(ctx context.Context) (*MassProperties, error) {
 	}
 
 	resp, err := b.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-bodymass-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("geometry.query_mass_properties.body"),
 		Op:        "geometry.query_mass_properties",
 		Payload:   reqData,
 	})
@@ -290,7 +288,7 @@ func (b *Body) BoundingBox(ctx context.Context) (*BoundingBox, error) {
 	}
 
 	resp, err := b.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-bodybbox-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("geometry.query_bounding_box.body"),
 		Op:        "geometry.query_bounding_box",
 		Payload:   reqData,
 	})
