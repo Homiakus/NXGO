@@ -2,8 +2,6 @@ package nxgo
 
 import (
 	"context"
-	"fmt"
-	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
@@ -65,7 +63,7 @@ func (p *Part) CreateDrawingSheet(ctx context.Context, params CreateSheetParams)
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-sheet-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("drafting.create_sheet"),
 		Op:        "drafting.create_sheet",
 		Payload:   reqData,
 	})
@@ -103,7 +101,7 @@ func (p *Part) ExportPDF(ctx context.Context, params ExportPDFParams) (*ExportPD
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-pdf-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("drafting.export_pdf"),
 		Op:        "drafting.export_pdf",
 		Payload:   reqData,
 	})
@@ -134,7 +132,7 @@ func (p *Part) DrawingSheets(ctx context.Context) ([]*DrawingSheet, error) {
 	}
 
 	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: fmt.Sprintf("req-qsheets-%d", time.Now().UnixNano()),
+		RequestID: newRequestID("drafting.query_sheets"),
 		Op:        "drafting.query_sheets",
 		Payload:   reqData,
 	})
