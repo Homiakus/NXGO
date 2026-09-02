@@ -181,6 +181,12 @@ public static partial class EntryPoint
                     return StartMassProperties(executor, requestId, requestPayload, token);
                 case "geometry.query_bounding_box":
                     return StartBoundingBox(executor, requestId, requestPayload, token);
+                case "transaction.begin":
+                    return StartTransactionBegin(session, executor, requestId, requestPayload, token);
+                case "transaction.commit":
+                    return StartTransactionCommit(session, executor, requestId, requestPayload, token);
+                case "transaction.rollback":
+                    return StartTransactionRollback(session, executor, requestId, requestPayload, token);
 
                 default:
                     return Task.FromResult(FormatError(requestId, "UNSUPPORTED_OPERATION", "canonical NXHost operation is not migrated yet: " + operation, false));
@@ -188,7 +194,12 @@ public static partial class EntryPoint
         }
         catch (StaleObjectHandleException ex)
         {
-            return Task.FromResult(FormatError(requestId, "INVALID_ARGUMENT", ex.Message, false));
+            var response = FormatError(requestId, "INVALID_ARGUMENT", ex.Message, false);
+            if (IsJournaledMutation(operation))
+            {
+                TryMarkFailedBeforeStart(requestId, ex.Message, response);
+            }
+            return Task.FromResult(response);
         }
         catch (ArgumentException ex)
         {
@@ -373,18 +384,41 @@ public static partial class EntryPoint
         catch (Exception ex)
         {
             RequestJournalRecord? record;
-            if (Journal.TryGet(requestId, out record) && record != null && record.State == RequestJournalState.Started)
+            if (Journal.TryGet(requestId, out record) && record != null)
             {
-                Journal.MarkOutcomeUnknown(requestId, ex.GetType().Name + ": " + ex.Message);
-                Health.MarkLost();
-                return FormatError(requestId, "OUTCOME_UNKNOWN", "NX mutation faulted after execution started; worker is quarantined: " + ex.Message, false);
+                if (record.State == RequestJournalState.Started)
+                {
+                    Journal.MarkOutcomeUnknown(requestId, ex.GetType().Name + ": " + ex.Message);
+                    Health.MarkLost();
+                    return FormatError(requestId, "OUTCOME_UNKNOWN", "NX mutation faulted after execution started; worker is quarantined: " + ex.Message, false);
+                }
+                if (record.State == RequestJournalState.Received)
+                {
+                    var category = PreStartErrorCategory(ex);
+                    var response = FormatError(requestId, category, ex.GetType().Name + ": " + ex.Message, category == "CAPACITY");
+                    TryMarkFailedBeforeStart(requestId, ex.Message, response);
+                    return response;
+                }
             }
 
-            var response = FormatError(requestId, "INTERNAL", ex.GetType().Name + ": " + ex.Message, false);
-            TryMarkFailedBeforeStart(requestId, ex.Message, response);
             Health.MarkSuspect();
-            return response;
+            return FormatError(requestId, "INTERNAL", ex.GetType().Name + ": " + ex.Message, false);
         }
+    }
+
+    private static string PreStartErrorCategory(Exception ex)
+    {
+        if (ex is ArgumentException || ex is KeyNotFoundException || ex is StaleObjectHandleException)
+        {
+            return "INVALID_ARGUMENT";
+        }
+        if (ex is UndoTransactionCapacityException ||
+            ex is HandleRegistryCapacityException ||
+            ex is HandleScopeCapacityException)
+        {
+            return "CAPACITY";
+        }
+        return "INTERNAL";
     }
 
     private static void TryMarkFailedBeforeStart(string requestId, string diagnostic, byte[] response)
@@ -407,6 +441,9 @@ public static partial class EntryPoint
             case "object.release":
             case "feature.create_block":
             case "feature.create_cylinder":
+            case "transaction.begin":
+            case "transaction.commit":
+            case "transaction.rollback":
                 return true;
             default:
                 return false;
@@ -445,6 +482,9 @@ public static partial class EntryPoint
                 "part.query_bodies",
                 "geometry.query_mass_properties",
                 "geometry.query_bounding_box",
+                "transaction.begin",
+                "transaction.commit",
+                "transaction.rollback",
                 "shutdown",
             },
             ["max_payload_bytes"] = 4 * 1024 * 1024,
