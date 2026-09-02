@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
 namespace NXGO.Agent.Core;
 
 /// <summary>
@@ -7,12 +11,12 @@ namespace NXGO.Agent.Core;
 /// </summary>
 public sealed class ObjectHandleToken
 {
-    public string SessionId { get; init; } = string.Empty;
-    public ulong Epoch { get; init; }
-    public string ObjectId { get; init; } = string.Empty;
-    public uint Generation { get; init; }
-    public string Kind { get; init; } = string.Empty;
-    public string LeaseScopeId { get; init; } = string.Empty;
+    public string SessionId { get; set; } = string.Empty;
+    public ulong Epoch { get; set; }
+    public string ObjectId { get; set; } = string.Empty;
+    public uint Generation { get; set; }
+    public string Kind { get; set; } = string.Empty;
+    public string LeaseScopeId { get; set; } = string.Empty;
 }
 
 public sealed class StaleObjectHandleException : InvalidOperationException
@@ -40,18 +44,18 @@ public sealed class HandleRegistry<T> where T : class
 {
     private sealed class Entry
     {
-        public required int Slot { get; init; }
-        public required ObjectHandleToken Token { get; init; }
-        public required T Target { get; init; }
+        public int Slot { get; set; }
+        public ObjectHandleToken Token { get; set; } = new ObjectHandleToken();
+        public T Target { get; set; } = default!;
     }
 
     private readonly string _sessionId;
     private readonly ulong _epoch;
     private readonly int _capacity;
-    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
-    private readonly Dictionary<int, uint> _slotGenerations = new();
-    private readonly Queue<int> _freeSlots = new();
-    private readonly object _sync = new();
+    private readonly Dictionary<string, Entry> _entries = new Dictionary<string, Entry>(StringComparer.Ordinal);
+    private readonly Dictionary<int, uint> _slotGenerations = new Dictionary<int, uint>();
+    private readonly Queue<int> _freeSlots = new Queue<int>();
+    private readonly object _sync = new object();
     private int _nextSlot = 1;
     private int _highWatermark;
 
@@ -65,9 +69,9 @@ public sealed class HandleRegistry<T> where T : class
         _capacity = capacity;
     }
 
-    public string SessionId => _sessionId;
-    public ulong Epoch => _epoch;
-    public int Capacity => _capacity;
+    public string SessionId { get { return _sessionId; } }
+    public ulong Epoch { get { return _epoch; } }
+    public int Capacity { get { return _capacity; } }
 
     public int Count
     {
@@ -81,7 +85,7 @@ public sealed class HandleRegistry<T> where T : class
 
     public ObjectHandleToken Register(T target, string kind, string leaseScopeId = "")
     {
-        if (target is null) throw new ArgumentNullException(nameof(target));
+        if (target == null) throw new ArgumentNullException(nameof(target));
         if (string.IsNullOrWhiteSpace(kind)) throw new ArgumentException("object kind is required", nameof(kind));
 
         lock (_sync)
@@ -107,7 +111,8 @@ public sealed class HandleRegistry<T> where T : class
                 slot = _nextSlot++;
             }
 
-            _slotGenerations.TryGetValue(slot, out var previousGeneration);
+            uint previousGeneration;
+            _slotGenerations.TryGetValue(slot, out previousGeneration);
             if (previousGeneration == uint.MaxValue)
             {
                 throw new InvalidOperationException($"generation exhausted for object registry slot {slot}; worker must be recycled");
@@ -133,13 +138,14 @@ public sealed class HandleRegistry<T> where T : class
 
     public T Resolve(ObjectHandleToken token, params string[] expectedKinds)
     {
-        if (token is null) throw new StaleObjectHandleException("object handle is null");
+        if (token == null) throw new StaleObjectHandleException("object handle is null");
 
         lock (_sync)
         {
             ValidateIdentityLocked(token);
             var entry = _entries[token.ObjectId];
-            if (expectedKinds is { Length: > 0 } && !expectedKinds.Any(k => string.Equals(k, entry.Token.Kind, StringComparison.OrdinalIgnoreCase)))
+            if (expectedKinds != null && expectedKinds.Length > 0 &&
+                !expectedKinds.Any(k => string.Equals(k, entry.Token.Kind, StringComparison.OrdinalIgnoreCase)))
             {
                 throw new StaleObjectHandleException($"wrong object kind for {token.ObjectId}: got {entry.Token.Kind}, expected one of [{string.Join(", ", expectedKinds)}]");
             }
@@ -149,7 +155,7 @@ public sealed class HandleRegistry<T> where T : class
 
     public bool Release(ObjectHandleToken token)
     {
-        if (token is null) throw new StaleObjectHandleException("object handle is null");
+        if (token == null) throw new StaleObjectHandleException("object handle is null");
 
         lock (_sync)
         {
@@ -197,7 +203,8 @@ public sealed class HandleRegistry<T> where T : class
         {
             throw new StaleObjectHandleException("object handle is missing generation");
         }
-        if (!_entries.TryGetValue(token.ObjectId, out var entry))
+        Entry entry;
+        if (!_entries.TryGetValue(token.ObjectId, out entry))
         {
             throw new StaleObjectHandleException("object handle not found or expired: " + token.ObjectId);
         }
