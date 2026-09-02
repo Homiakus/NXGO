@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+      - name: Canonical wire protocol contract
+        run: dotnet test agent/NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj -c Release --nologo
       - name: Canonical fast loop
         run: go run ./cmd/nxctl test fast
       - name: Fake-Agent chaos contract
