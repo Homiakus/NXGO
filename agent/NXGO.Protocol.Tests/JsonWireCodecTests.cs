@@ -37,7 +37,8 @@ public sealed class JsonWireCodecTests
         var decoded = codec.Deserialize<HandshakeResponseDto>(Encoding.UTF8.GetBytes(json));
         Assert.Equal(input.ProtocolVersion.Major, decoded.ProtocolVersion.Major);
         Assert.Equal(input.SessionId, decoded.SessionId);
-        Assert.Equal(input.Capabilities, decoded.Capabilities);
+        Assert.NotNull(decoded.Capabilities);
+        Assert.Equal(input.Capabilities, decoded.Capabilities!);
     }
 
     [Fact]
@@ -68,9 +69,11 @@ public sealed class JsonWireCodecTests
 
         Assert.Equal(request.RequestId, decoded.RequestId);
         Assert.Equal("part.open", decoded.Operation);
-        Assert.Equal(request.Payload["path"], decoded.Payload["path"]);
-        Assert.Equal(request.Payload["note"], decoded.Payload["note"]);
-        Assert.True(Convert.ToBoolean(decoded.Payload["enabled"]));
+        Assert.NotNull(decoded.Payload);
+        var decodedPayload = decoded.Payload!;
+        Assert.Equal(request.Payload!["path"], decodedPayload["path"]);
+        Assert.Equal(request.Payload["note"], decodedPayload["note"]);
+        Assert.True(Convert.ToBoolean(decodedPayload["enabled"]));
 
         using var doc = JsonDocument.Parse(encoded);
         var root = doc.RootElement;
@@ -90,8 +93,10 @@ public sealed class JsonWireCodecTests
 
         Assert.Equal("req-123", request.RequestId);
         Assert.Equal("feature.create_block", request.Operation);
-        Assert.Equal(100d, Convert.ToDouble(request.Payload["length"]));
-        Assert.Equal("create", Convert.ToString(request.Payload["boolean_op"]));
+        Assert.NotNull(request.Payload);
+        var payload = request.Payload!;
+        Assert.Equal(100d, Convert.ToDouble(payload["length"]));
+        Assert.Equal("create", Convert.ToString(payload["boolean_op"]));
 
         var roundtrip = codec.Serialize(request);
         using var expectedDoc = JsonDocument.Parse(golden);
@@ -126,7 +131,8 @@ public sealed class JsonWireCodecTests
 
         var decoded = codec.Deserialize<ResponseEnvelopeDto>(encoded);
         Assert.NotNull(decoded.Error);
-        Assert.Equal(response.Error!.Message, decoded.Error!.Message);
+        var decodedError = decoded.Error!;
+        Assert.Equal(response.Error!.Message, decodedError.Message);
     }
 
     [Fact]
