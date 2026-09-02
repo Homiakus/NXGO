@@ -62,9 +62,9 @@ jobs:
       - name: Invariant gate
         shell: pwsh
         run: go run ./cmd/invariantcheck
-      - name: Canonical compiled-host smoke
+      - name: Canonical compiled-host smoke and geometry oracle
         shell: pwsh
-        run: go test -v -timeout 90s ./tests/nx -run '^TestRealNXCanonicalCompiledHost$'
+        run: go test -v -timeout 210s ./tests/nx -run '^TestRealNXCanonicalCompiledHost$'
         env:
           NXGO_RUN_REAL_NX: '1'
       - name: Real Siemens NX semantic suite
