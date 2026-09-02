@@ -1,1 +1,0 @@
-apply=canonical-nxhost-transactions
