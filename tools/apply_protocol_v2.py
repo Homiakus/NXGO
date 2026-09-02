@@ -20,8 +20,8 @@ replace_once(
 
 agent = pathlib.Path("agent/bundle/AgentWorker.cs")
 a = agent.read_text(encoding="utf-8")
-old = '''{\\\"protocol_version\\\":{\\\"major\\\":1,\\\"minor\\\":0},\\\"agent_version\\\":\\\"v0.1.0-realnx\\\"'''
-new = '''{\\\"protocol_version\\\":{\\\"major\\\":2,\\\"minor\\\":0},\\\"agent_version\\\":\\\"v0.2.0-realnx\\\"'''
+old = '\\\"major\\\":1,\\\"minor\\\":0}},\\\"agent_version\\\":\\\"v0.1.0-realnx\\\"'
+new = '\\\"major\\\":2,\\\"minor\\\":0}},\\\"agent_version\\\":\\\"v0.2.0-realnx\\\"'
 if a.count(old) != 1:
     raise SystemExit(f"production handshake source count={a.count(old)}")
 agent.write_text(a.replace(old, new, 1), encoding="utf-8")
