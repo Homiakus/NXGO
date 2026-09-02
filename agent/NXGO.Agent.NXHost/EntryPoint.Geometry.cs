@@ -17,7 +17,6 @@ public static partial class EntryPoint
     private static Task<byte[]> StartCreateBlock(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "part_ref", "Part");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
         RequireCreateOnlyFeatureOptions(payload);
         var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
         var length = GetDouble(payload, "length", 100.0);
@@ -28,6 +27,7 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
             Journal.MarkStarted(requestId);
             using (var scope = new BuilderScope<NXOpen.Features.BlockFeatureBuilder>(
                 part.Features.CreateBlockFeatureBuilder(null),
@@ -67,7 +67,6 @@ public static partial class EntryPoint
     private static Task<byte[]> StartCreateCylinder(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "part_ref", "Part");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
         RequireCreateOnlyFeatureOptions(payload);
         var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
         var direction = GetDoubleArray(payload, "direction", 3, new[] { 0.0, 0.0, 1.0 });
@@ -79,6 +78,7 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
             Journal.MarkStarted(requestId);
             using (var scope = new BuilderScope<NXOpen.Features.CylinderBuilder>(
                 part.Features.CreateCylinderBuilder(null),
@@ -117,11 +117,11 @@ public static partial class EntryPoint
     private static Task<byte[]> StartQueryBodies(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "part_ref", "Part");
-        var part = (Part)Registry.Resolve(partHandle, "Part");
 
         return MapRead(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
             var bodies = new List<Body>();
             foreach (Body body in part.Bodies) bodies.Add(body);
             if (bodies.Count > MaxProducedHandlesPerRequest)
@@ -166,11 +166,11 @@ public static partial class EntryPoint
     private static Task<byte[]> StartMassProperties(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var bodyHandle = RequireHandle(payload, "body_ref", "Body");
-        var body = (Body)Registry.Resolve(bodyHandle, "Body");
 
         return MapRead(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var body = (Body)Registry.Resolve(bodyHandle, "Body");
             var contract = ContractFor(body);
             var uf = NXOpen.UF.UFSession.GetUFSession();
             var bodyTags = new NXOpen.Tag[] { body.Tag };
@@ -203,11 +203,11 @@ public static partial class EntryPoint
     private static Task<byte[]> StartBoundingBox(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var bodyHandle = RequireHandle(payload, "body_ref", "Body");
-        var body = (Body)Registry.Resolve(bodyHandle, "Body");
 
         return MapRead(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            var body = (Body)Registry.Resolve(bodyHandle, "Body");
             var uf = NXOpen.UF.UFSession.GetUFSession();
             var minMax = new double[6];
             uf.Modl.AskBoundingBox(body.Tag, minMax);
@@ -233,13 +233,16 @@ public static partial class EntryPoint
             var handle = ParseHandle(dict);
             var identity = handle.ObjectId + "/" + handle.Generation.ToString(CultureInfo.InvariantCulture);
             if (!identities.Add(identity)) throw new ArgumentException("duplicate handle in object.release: " + identity);
-            Registry.Resolve(handle);
             handles.Add(handle);
         }
 
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            foreach (var handle in handles)
+            {
+                Registry.Resolve(handle);
+            }
             Journal.MarkStarted(requestId);
             var released = 0;
             foreach (var handle in handles)
