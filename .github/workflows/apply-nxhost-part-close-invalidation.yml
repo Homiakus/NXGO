@@ -1,0 +1,50 @@
+name: apply-nxhost-part-close-invalidation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/nxhost_part_close_invalidation.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply part-close dependent invalidation
+        run: python3 tools/apply_nxhost_part_close_invalidation.py
+      - name: Verify fail-closed invalidation ordering
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('agent/NXGO.Agent.NXHost/EntryPoint.cs').read_text(encoding='utf-8')
+          close = 'part.Close(BasePart.CloseWholeTree.False, BasePart.CloseModified.CloseModified, null);'
+          release = 'Registry.ReleaseWithDependents(handle);'
+          if text.count(close) != 1 or text.count(release) != 1:
+              raise SystemExit('expected one close and one dependent release')
+          if text.index(close) > text.index(release):
+              raise SystemExit('registry invalidation must occur only after native NX close succeeds')
+          PY
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit dependent invalidation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent/NXGO.Agent.NXHost/EntryPoint.cs
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix(nxhost): invalidate dependent handles on part close'
+          git push origin HEAD:main
