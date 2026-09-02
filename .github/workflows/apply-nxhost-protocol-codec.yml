@@ -1,0 +1,49 @@
+name: apply-nxhost-protocol-codec
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/nxhost_protocol_codec.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply deterministic typed protocol migration
+        run: python3 tools/apply_nxhost_protocol_codec.py
+      - name: Verify serializer cutover
+        run: |
+          grep -Fq 'using NXGO.Protocol;' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'JsonWireCodec' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'WireMessageProbeDto' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'RequestEnvelopeDto' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'ResponseEnvelopeDto' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          ! grep -Fq 'JavaScriptSerializer' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          ! grep -Fq 'System.Web.Extensions' agent/NXGO.Agent.NXHost/NXGO.Agent.NXHost.csproj
+      - name: Canonical wire protocol contract
+        run: dotnet test agent/NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj -c Release --nologo
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit canonical typed protocol path
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add agent/NXGO.Agent.NXHost/EntryPoint.cs agent/NXGO.Agent.NXHost/NXGO.Agent.NXHost.csproj internal/agentbundle/compiled_host_test.go
+          git diff --cached --quiet && exit 0
+          git commit -m 'refactor(nxhost): use canonical typed protocol codec'
+          git push origin HEAD:main
