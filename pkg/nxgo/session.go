@@ -71,18 +71,30 @@ func WrapClient(client *pipe.Client, sessionID string, epoch uint64, nxRelease s
 }
 
 func (s *Session) SessionID() string {
+	if s == nil {
+		return ""
+	}
 	return s.sessionID
 }
 
 func (s *Session) Epoch() uint64 {
+	if s == nil {
+		return 0
+	}
 	return s.epoch
 }
 
 func (s *Session) NXRelease() string {
+	if s == nil {
+		return ""
+	}
 	return s.nxRelease
 }
 
 func (s *Session) Ping(ctx context.Context) error {
+	if err := s.validateOpen(); err != nil {
+		return err
+	}
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
 		RequestID: newRequestID("nx.ping"),
 		Op:        "nx.ping",
@@ -97,6 +109,9 @@ func (s *Session) Ping(ctx context.Context) error {
 }
 
 func (s *Session) Info(ctx context.Context) (*SessionInfo, error) {
+	if err := s.validateOpen(); err != nil {
+		return nil, err
+	}
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
 		RequestID: newRequestID("session.info"),
 		Op:        "session.info",
@@ -112,8 +127,16 @@ func (s *Session) Info(ctx context.Context) (*SessionInfo, error) {
 }
 
 func (s *Session) ReleaseObjects(ctx context.Context, refs ...protocol.ObjectHandleWire) error {
+	if err := s.validateOpen(); err != nil {
+		return err
+	}
 	if len(refs) == 0 {
 		return nil
+	}
+	for i := range refs {
+		if err := s.validateObjectHandle(&refs[i]); err != nil {
+			return fmt.Errorf("release object %d: %w", i, err)
+		}
 	}
 	reqData, err := protocol.EncodePayload(protocol.ObjectReleaseRequest{Handles: refs})
 	if err != nil {
@@ -134,7 +157,7 @@ func (s *Session) ReleaseObjects(ctx context.Context, refs ...protocol.ObjectHan
 }
 
 func (s *Session) Close() error {
-	if s.client == nil {
+	if s == nil || s.client == nil {
 		return nil
 	}
 	return s.client.Close()
