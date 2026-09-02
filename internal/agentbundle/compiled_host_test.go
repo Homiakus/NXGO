@@ -70,6 +70,8 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 
 	for _, marker := range []string{
 		"NXGO_AGENT_BIN",
+		"Newtonsoft.Json.dll",
+		"NXGO.Protocol.dll",
 		"NXGO.Agent.Core.dll",
 		"NXGO.Agent.NXHost.dll",
 		"NXGO.Agent.NXHost.EntryPoint",
@@ -83,11 +85,11 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		t.Fatal("compiled bootstrap must remain a loader only; runtime primitives cannot be duplicated there")
 	}
 
-	if !strings.Contains(project, "<ProjectReference") || !strings.Contains(project, "NXGO.Agent.Core") {
-		t.Fatal("NXHost must consume NXGO.Agent.Core through a ProjectReference")
+	if !strings.Contains(project, "<ProjectReference") || !strings.Contains(project, "NXGO.Agent.Core") || !strings.Contains(project, "NXGO.Protocol") {
+		t.Fatal("NXHost must consume NXGO.Agent.Core and NXGO.Protocol through ProjectReferences")
 	}
-	if !strings.Contains(project, "System.Web.Extensions") {
-		t.Fatal("canonical NXHost must use the framework JSON serializer rather than manual JSON slicing")
+	if strings.Contains(project, "System.Web.Extensions") {
+		t.Fatal("canonical NXHost must not retain the legacy JavaScriptSerializer dependency")
 	}
 
 	for _, marker := range []string{
@@ -96,7 +98,10 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"new NamedPipeRequestServer",
 		"HandleRegistry<TaggedObject>",
 		"new RequestJournal",
-		"JavaScriptSerializer",
+		"JsonWireCodec",
+		"WireMessageProbeDto",
+		"RequestEnvelopeDto",
+		"ResponseEnvelopeDto",
 		"ProtocolMajor = 2",
 		"part.new",
 		"part.open",
@@ -235,8 +240,10 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	}
 
 	if !strings.Contains(build, "dotnet build $hostProject") ||
+		!strings.Contains(build, "NXGO.Protocol.dll") ||
+		!strings.Contains(build, "Newtonsoft.Json.dll") ||
 		!strings.Contains(build, "NXGO.Agent.Core.dll") ||
 		!strings.Contains(build, "NXGO.Agent.NXHost.dll") {
-		t.Fatal("build-agent.ps1 must build and verify canonical Core/NXHost outputs")
+		t.Fatal("build-agent.ps1 must build and verify canonical Protocol/Core/NXHost runtime outputs")
 	}
 }

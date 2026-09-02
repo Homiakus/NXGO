@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Web.Script.Serialization;
 using NXGO.Agent.Core;
+using NXGO.Protocol;
 using NXOpen;
 
 namespace NXGO.Agent.NXHost;
@@ -25,7 +24,7 @@ public static partial class EntryPoint
     private static readonly string SessionId = "nxgo-" + Guid.NewGuid().ToString("N");
     private static readonly HandleRegistry<TaggedObject> Registry = new HandleRegistry<TaggedObject>(SessionId, Epoch, 4096);
     private static readonly RequestJournal Journal = new RequestJournal(RequestJournal.DefaultCapacity);
-    private static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = 4 * 1024 * 1024 };
+    private static readonly JsonWireCodec Wire = new JsonWireCodec(JsonWireCodec.DefaultMaxPayloadBytes);
     private static volatile bool _shutdownRequested;
 
     public static void Main(string[] args)
@@ -62,28 +61,50 @@ public static partial class EntryPoint
 
     private static Task<byte[]> HandleRequest(Session session, NxExecutor executor, byte[] payload, CancellationToken token)
     {
-        Dictionary<string, object> envelope;
+        WireMessageProbeDto probe;
         try
         {
-            envelope = DecodeObject(payload);
+            probe = Wire.Deserialize<WireMessageProbeDto>(payload ?? Array.Empty<byte>());
         }
         catch (Exception ex)
         {
             return Task.FromResult(FormatError(string.Empty, "INVALID_ARGUMENT", "invalid JSON request: " + ex.Message, false));
         }
 
-        if (envelope.ContainsKey("protocol_version") && envelope.ContainsKey("nonce") && !envelope.ContainsKey("request_id"))
+        if (probe.ProtocolVersion != null && !string.IsNullOrWhiteSpace(probe.Nonce) && string.IsNullOrWhiteSpace(probe.RequestId))
         {
-            return Task.FromResult(FormatHandshake(session));
+            try
+            {
+                var handshake = Wire.Deserialize<HandshakeRequestDto>(payload);
+                if (handshake.ProtocolVersion == null || string.IsNullOrWhiteSpace(handshake.Nonce))
+                {
+                    return Task.FromResult(FormatError(string.Empty, "INVALID_ARGUMENT", "invalid handshake", false));
+                }
+                return Task.FromResult(FormatHandshake(session));
+            }
+            catch (Exception ex)
+            {
+                return Task.FromResult(FormatError(string.Empty, "INVALID_ARGUMENT", "invalid handshake: " + ex.Message, false));
+            }
         }
 
-        var requestId = GetString(envelope, "request_id", string.Empty);
-        var operation = GetString(envelope, "op", string.Empty);
+        RequestEnvelopeDto request;
+        try
+        {
+            request = Wire.Deserialize<RequestEnvelopeDto>(payload);
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(FormatError(probe.RequestId ?? string.Empty, "INVALID_ARGUMENT", "invalid RPC envelope: " + ex.Message, false));
+        }
+
+        var requestId = request.RequestId ?? string.Empty;
+        var operation = request.Operation ?? string.Empty;
         if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(operation))
         {
             return Task.FromResult(FormatError(requestId, "INVALID_ARGUMENT", "request_id and op are required", false));
         }
-        var requestPayload = GetObject(envelope, "payload", required: false) ?? new Dictionary<string, object>(StringComparer.Ordinal);
+        var requestPayload = request.Payload ?? new Dictionary<string, object>(StringComparer.Ordinal);
 
         if (operation == "shutdown")
         {
@@ -96,7 +117,7 @@ public static partial class EntryPoint
             RequestAdmission admission;
             try
             {
-                admission = Journal.Admit(requestId, operation, Encoding.UTF8.GetBytes(Json.Serialize(requestPayload)));
+                admission = Journal.Admit(requestId, operation, Wire.Serialize(requestPayload));
             }
             catch (RequestIdentityConflictException ex)
             {
@@ -488,20 +509,16 @@ public static partial class EntryPoint
     {
         var release = session.GetEnvironmentVariableValue("UGII_VERSION");
         if (string.IsNullOrWhiteSpace(release)) release = "unknown";
-        return Serialize(new Dictionary<string, object>
+        return Wire.Serialize(new HandshakeResponseDto
         {
-            ["protocol_version"] = new Dictionary<string, object>
-            {
-                ["major"] = ProtocolMajor,
-                ["minor"] = ProtocolMinor,
-            },
-            ["agent_version"] = "v0.2.0-nxhost",
-            ["nx_release"] = release,
-            ["nx_build"] = release + ".compiled",
-            ["nx_pid"] = Process.GetCurrentProcess().Id,
-            ["session_id"] = SessionId,
-            ["epoch"] = Epoch,
-            ["capabilities"] = new[]
+            ProtocolVersion = new ProtocolVersionDto { Major = ProtocolMajor, Minor = ProtocolMinor },
+            AgentVersion = "v0.2.0-nxhost",
+            NxRelease = release,
+            NxBuild = release + ".compiled",
+            NxPid = Process.GetCurrentProcess().Id,
+            SessionId = SessionId,
+            Epoch = Epoch,
+            Capabilities = new[]
             {
                 "nx.ping",
                 "session.info",
@@ -528,34 +545,34 @@ public static partial class EntryPoint
                 "drafting.export_pdf",
                 "shutdown",
             },
-            ["max_payload_bytes"] = 4 * 1024 * 1024,
-            ["security_policy"] = "local_pipe_only",
+            MaxPayloadBytes = JsonWireCodec.DefaultMaxPayloadBytes,
+            SecurityPolicy = "local_pipe_only",
         });
     }
 
-    private static byte[] FormatResponse(string requestId, object payload)
+    private static byte[] FormatResponse(string requestId, Dictionary<string, object> payload)
     {
-        return Serialize(new Dictionary<string, object>
+        return Wire.Serialize(new ResponseEnvelopeDto
         {
-            ["request_id"] = requestId ?? string.Empty,
-            ["status"] = "OK",
-            ["payload"] = payload ?? new Dictionary<string, object>(),
+            RequestId = requestId ?? string.Empty,
+            Status = "OK",
+            Payload = payload ?? new Dictionary<string, object>(StringComparer.Ordinal),
         });
     }
 
     private static byte[] FormatError(string requestId, string category, string message, bool recoverable)
     {
-        return Serialize(new Dictionary<string, object>
+        return Wire.Serialize(new ResponseEnvelopeDto
         {
-            ["request_id"] = requestId ?? string.Empty,
-            ["status"] = "ERROR",
-            ["error"] = new Dictionary<string, object>
+            RequestId = requestId ?? string.Empty,
+            Status = "ERROR",
+            Error = new WireErrorDto
             {
-                ["category"] = category,
-                ["nx_error_code"] = 0,
-                ["message"] = message ?? string.Empty,
-                ["recoverable"] = recoverable,
-                ["session_health"] = WireHealth(),
+                Category = category ?? string.Empty,
+                NxErrorCode = 0,
+                Message = message ?? string.Empty,
+                Recoverable = recoverable,
+                SessionHealth = WireHealth(),
             },
         });
     }
@@ -567,19 +584,6 @@ public static partial class EntryPoint
             : Health.Value == SessionHealth.Lost
                 ? "lost"
                 : "dirty";
-    }
-
-    private static byte[] Serialize(object value)
-    {
-        return Encoding.UTF8.GetBytes(Json.Serialize(value));
-    }
-
-    private static Dictionary<string, object> DecodeObject(byte[] payload)
-    {
-        var text = Encoding.UTF8.GetString(payload ?? Array.Empty<byte>());
-        var decoded = Json.DeserializeObject(text) as Dictionary<string, object>;
-        if (decoded == null) throw new ArgumentException("request must be a JSON object");
-        return decoded;
     }
 
     private static Dictionary<string, object>? GetObject(Dictionary<string, object> source, string key, bool required)

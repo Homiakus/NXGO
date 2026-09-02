@@ -10,7 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\NXGO.Protocol\NXGO.Protocol.csproj" />
     <ProjectReference Include="..\NXGO.Agent.Core\NXGO.Agent.Core.csproj" />
-    <Reference Include="System.Web.Extensions" />
     <Reference Include="NXOpen">
       <HintPath>$(NXGO_NX_MANAGED)\NXOpen.dll</HintPath>
       <Private>false</Private>
