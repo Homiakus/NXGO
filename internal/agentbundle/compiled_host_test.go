@@ -51,19 +51,36 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	if !strings.Contains(project, "<ProjectReference") || !strings.Contains(project, "NXGO.Agent.Core") {
 		t.Fatal("NXHost must consume NXGO.Agent.Core through a ProjectReference")
 	}
+	if !strings.Contains(project, `Reference Include="System.Web.Extensions"`) {
+		t.Fatal("canonical NXHost must use the framework JSON serializer rather than manual JSON slicing")
+	}
 	for _, marker := range []string{
 		"using NXGO.Agent.Core;",
 		"new NxExecutor()",
 		"new NamedPipeRequestServer",
+		"HandleRegistry<TaggedObject>",
+		"new RequestJournal",
+		"JavaScriptSerializer",
 		"ProtocolMajor = 2",
-		"session.info",
+		"part.new",
+		"part.open",
+		"part.save",
+		"part.close",
+		"part.query_summary",
 	} {
 		if !strings.Contains(host, marker) {
-			t.Errorf("canonical NXHost missing Core/v2 marker %q", marker)
+			t.Errorf("canonical NXHost missing Core/v2/part marker %q", marker)
 		}
 	}
-	if strings.Contains(host, "public sealed class NxExecutor") || strings.Contains(host, "public sealed class NamedPipeRequestServer") {
-		t.Fatal("NXHost must not reimplement Agent.Core transport/executor primitives")
+	for _, forbidden := range []string{
+		"public sealed class NxExecutor",
+		"public sealed class NamedPipeRequestServer",
+		"private static string ExtractJsonString",
+		"IndexOf(\"\\\"request_id\\\"\")",
+	} {
+		if strings.Contains(host, forbidden) {
+			t.Errorf("canonical NXHost reintroduced duplicated/manual runtime primitive: %q", forbidden)
+		}
 	}
 
 	if !strings.Contains(build, "dotnet build $hostProject") ||
