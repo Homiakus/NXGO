@@ -14,15 +14,20 @@ import (
 )
 
 var (
-	ErrNotConnected     = errors.New("transport is not connected")
-	ErrClosed           = errors.New("transport closed")
-	ErrHandshakeFailed  = errors.New("handshake failed")
-	ErrSessionUnhealthy = errors.New("session is not healthy")
+	ErrNotConnected      = errors.New("transport is not connected")
+	ErrClosed            = errors.New("transport closed")
+	ErrHandshakeFailed   = errors.New("handshake failed")
+	ErrSessionUnhealthy  = errors.New("session is not healthy")
+	ErrOutcomeUnknown    = errors.New("request outcome is unknown; connection quarantined")
+	ErrProtocolViolation = errors.New("transport protocol violation")
+	ErrDuplicateRequest  = errors.New("duplicate in-flight request id")
 )
 
 type FramedConn struct {
 	rwc        io.ReadWriteCloser
-	mu         sync.Mutex
+	writeMu    sync.Mutex
+	stateMu    sync.Mutex
+	closed     bool
 	maxPayload int
 }
 
@@ -37,27 +42,52 @@ func NewFramedConn(rwc io.ReadWriteCloser, maxPayload int) *FramedConn {
 }
 
 func (fc *FramedConn) Send(payload []byte) error {
-	fc.mu.Lock()
-	defer fc.mu.Unlock()
-	if fc.rwc == nil {
+	fc.writeMu.Lock()
+	defer fc.writeMu.Unlock()
+
+	fc.stateMu.Lock()
+	closed := fc.closed
+	maxPayload := fc.maxPayload
+	fc.stateMu.Unlock()
+	if closed || fc.rwc == nil {
 		return ErrNotConnected
 	}
+	if len(payload) > maxPayload {
+		return fmt.Errorf("%w: %d > %d", protocol.ErrInvalidLength, len(payload), maxPayload)
+	}
+
 	frame, err := protocol.EncodeFrame(payload)
 	if err != nil {
 		return err
 	}
-	_, err = fc.rwc.Write(frame)
-	return err
+	for written := 0; written < len(frame); {
+		n, err := fc.rwc.Write(frame[written:])
+		if err != nil {
+			return err
+		}
+		if n <= 0 {
+			return io.ErrShortWrite
+		}
+		written += n
+	}
+	return nil
 }
 
 func (fc *FramedConn) Receive() ([]byte, error) {
+	if fc.rwc == nil {
+		return nil, ErrNotConnected
+	}
+
 	header := make([]byte, protocol.FrameHeaderSize)
 	if _, err := io.ReadFull(fc.rwc, header); err != nil {
 		return nil, err
 	}
 
 	length := uint32(header[0]) | uint32(header[1])<<8 | uint32(header[2])<<16 | uint32(header[3])<<24
-	if length > uint32(fc.maxPayload) {
+	fc.stateMu.Lock()
+	maxPayload := fc.maxPayload
+	fc.stateMu.Unlock()
+	if length > uint32(maxPayload) {
 		return nil, protocol.ErrInvalidLength
 	}
 
@@ -71,14 +101,21 @@ func (fc *FramedConn) Receive() ([]byte, error) {
 }
 
 func (fc *FramedConn) Close() error {
-	fc.mu.Lock()
-	defer fc.mu.Unlock()
+	fc.writeMu.Lock()
+	defer fc.writeMu.Unlock()
+
+	fc.stateMu.Lock()
+	if fc.closed {
+		fc.stateMu.Unlock()
+		return nil
+	}
+	fc.closed = true
+	fc.stateMu.Unlock()
+
 	if fc.rwc == nil {
 		return nil
 	}
-	err := fc.rwc.Close()
-	fc.rwc = nil
-	return err
+	return fc.rwc.Close()
 }
 
 func DialPipe(ctx context.Context, pipePath string) (io.ReadWriteCloser, error) {
@@ -107,64 +144,123 @@ func DialPipe(ctx context.Context, pipePath string) (io.ReadWriteCloser, error) 
 	}
 }
 
+type callResult struct {
+	resp *protocol.ResponseEnvelope
+	err  error
+}
+
 type Client struct {
-	conn       *FramedConn
-	mu         sync.Mutex
-	sessionID  string
-	epoch      uint64
-	serverInfo *protocol.HandshakeResponse
+	conn *FramedConn
+
+	handshakeMu sync.Mutex
+	writeMu     sync.Mutex
+	stateMu     sync.Mutex
+
+	sessionID    string
+	epoch        uint64
+	serverInfo   *protocol.HandshakeResponse
+	pending      map[string]chan callResult
+	readerStarted bool
+	closed       bool
+	quarantined  bool
+	terminalErr  error
 }
 
 func NewClient(rwc io.ReadWriteCloser) *Client {
 	return &Client{
-		conn: NewFramedConn(rwc, protocol.DefaultMaxPayloadBytes),
+		conn:    NewFramedConn(rwc, protocol.DefaultMaxPayloadBytes),
+		pending: make(map[string]chan callResult),
 	}
 }
 
 func (c *Client) Handshake(ctx context.Context, req *protocol.HandshakeRequest) (*protocol.HandshakeResponse, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.handshakeMu.Lock()
+	defer c.handshakeMu.Unlock()
 
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid handshake request: %w", err)
 	}
 
+	c.stateMu.Lock()
+	if c.closed {
+		c.stateMu.Unlock()
+		return nil, ErrClosed
+	}
+	if c.quarantined {
+		err := c.terminalErrorLocked()
+		c.stateMu.Unlock()
+		return nil, err
+	}
+	if c.readerStarted {
+		c.stateMu.Unlock()
+		return nil, fmt.Errorf("%w: handshake must complete before request reader starts", ErrHandshakeFailed)
+	}
+	c.stateMu.Unlock()
+
 	payload, err := protocol.EncodePayload(req)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := c.conn.Send(payload); err != nil {
+	c.writeMu.Lock()
+	err = c.conn.Send(payload)
+	c.writeMu.Unlock()
+	if err != nil {
+		c.quarantine(fmt.Errorf("%w: handshake send failed: %v", ErrHandshakeFailed, err))
 		return nil, fmt.Errorf("send handshake: %w", err)
 	}
 
-	respBytes, err := c.conn.Receive()
-	if err != nil {
-		return nil, fmt.Errorf("receive handshake: %w", err)
+	type handshakeResult struct {
+		payload []byte
+		err     error
+	}
+	resultCh := make(chan handshakeResult, 1)
+	go func() {
+		b, recvErr := c.conn.Receive()
+		resultCh <- handshakeResult{payload: b, err: recvErr}
+	}()
+
+	var respBytes []byte
+	select {
+	case <-ctx.Done():
+		c.quarantine(fmt.Errorf("%w: handshake interrupted: %v", ErrHandshakeFailed, ctx.Err()))
+		return nil, ctx.Err()
+	case res := <-resultCh:
+		if res.err != nil {
+			c.quarantine(fmt.Errorf("%w: handshake receive failed: %v", ErrHandshakeFailed, res.err))
+			return nil, fmt.Errorf("receive handshake: %w", res.err)
+		}
+		respBytes = res.payload
 	}
 
 	resp, err := protocol.DecodePayload[protocol.HandshakeResponse](respBytes)
 	if err != nil {
+		c.quarantine(fmt.Errorf("%w: invalid handshake response: %v", ErrProtocolViolation, err))
 		return nil, fmt.Errorf("decode handshake response: %w", err)
 	}
 
 	if err := protocol.NegotiateVersion(req.ProtocolVersion, resp.ProtocolVersion); err != nil {
-		_ = c.conn.Close()
+		c.quarantine(fmt.Errorf("%w: %v", ErrHandshakeFailed, err))
 		return nil, fmt.Errorf("%w: %v", ErrHandshakeFailed, err)
 	}
 
+	c.stateMu.Lock()
 	c.sessionID = resp.SessionID
 	c.epoch = resp.Epoch
 	c.serverInfo = resp
+	c.readerStarted = true
+	c.stateMu.Unlock()
+	go c.readLoop()
+
 	return resp, nil
 }
 
 func (c *Client) Call(ctx context.Context, req *protocol.RequestEnvelope) (*protocol.ResponseEnvelope, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	if err := req.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid request: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 
 	payload, err := protocol.EncodePayload(req)
@@ -172,42 +268,172 @@ func (c *Client) Call(ctx context.Context, req *protocol.RequestEnvelope) (*prot
 		return nil, err
 	}
 
-	if err := c.conn.Send(payload); err != nil {
-		return nil, fmt.Errorf("send request %s: %w", req.RequestID, err)
+	resultCh := make(chan callResult, 1)
+	startReader, err := c.registerPending(req.RequestID, resultCh)
+	if err != nil {
+		return nil, err
+	}
+	if startReader {
+		go c.readLoop()
 	}
 
-	type callResult struct {
-		respBytes []byte
-		err       error
+	c.writeMu.Lock()
+	err = c.conn.Send(payload)
+	c.writeMu.Unlock()
+	if err != nil {
+		c.removePending(req.RequestID)
+		terminal := fmt.Errorf("%w: send request %s failed: %v", ErrOutcomeUnknown, req.RequestID, err)
+		c.quarantine(terminal)
+		return nil, terminal
 	}
-	resChan := make(chan callResult, 1)
-
-	go func() {
-		b, err := c.conn.Receive()
-		resChan <- callResult{respBytes: b, err: err}
-	}()
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
-	case res := <-resChan:
-		if res.err != nil {
-			return nil, fmt.Errorf("receive response %s: %w", req.RequestID, res.err)
+		terminal := fmt.Errorf("%w: request %s interrupted after send: %v", ErrOutcomeUnknown, req.RequestID, ctx.Err())
+		c.quarantine(terminal)
+		return nil, terminal
+	case result := <-resultCh:
+		if result.err != nil {
+			return nil, result.err
 		}
-		resp, err := protocol.DecodePayload[protocol.ResponseEnvelope](res.respBytes)
-		if err != nil {
-			return nil, fmt.Errorf("decode response %s: %w", req.RequestID, err)
+		if result.resp == nil {
+			return nil, fmt.Errorf("%w: nil response for request %s", ErrProtocolViolation, req.RequestID)
 		}
-		return resp, nil
+		if result.resp.RequestID != req.RequestID {
+			terminal := fmt.Errorf("%w: response request_id %q does not match %q", ErrProtocolViolation, result.resp.RequestID, req.RequestID)
+			c.quarantine(terminal)
+			return nil, terminal
+		}
+		return result.resp, nil
 	}
 }
 
+func (c *Client) registerPending(requestID string, ch chan callResult) (bool, error) {
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
+
+	if c.closed {
+		return false, ErrClosed
+	}
+	if c.quarantined {
+		return false, c.terminalErrorLocked()
+	}
+	if _, exists := c.pending[requestID]; exists {
+		return false, fmt.Errorf("%w: %s", ErrDuplicateRequest, requestID)
+	}
+
+	startReader := !c.readerStarted
+	if startReader {
+		c.readerStarted = true
+	}
+	c.pending[requestID] = ch
+	return startReader, nil
+}
+
+func (c *Client) removePending(requestID string) {
+	c.stateMu.Lock()
+	delete(c.pending, requestID)
+	c.stateMu.Unlock()
+}
+
+func (c *Client) readLoop() {
+	for {
+		respBytes, err := c.conn.Receive()
+		if err != nil {
+			c.stateMu.Lock()
+			closed := c.closed
+			quarantined := c.quarantined
+			c.stateMu.Unlock()
+			if closed || quarantined {
+				return
+			}
+			c.quarantine(fmt.Errorf("%w: receive failed: %v", ErrOutcomeUnknown, err))
+			return
+		}
+
+		resp, err := protocol.DecodePayload[protocol.ResponseEnvelope](respBytes)
+		if err != nil {
+			c.quarantine(fmt.Errorf("%w: decode response: %v", ErrProtocolViolation, err))
+			return
+		}
+		if resp.RequestID == "" {
+			c.quarantine(fmt.Errorf("%w: response has empty request_id", ErrProtocolViolation))
+			return
+		}
+
+		c.stateMu.Lock()
+		ch, ok := c.pending[resp.RequestID]
+		if ok {
+			delete(c.pending, resp.RequestID)
+		}
+		c.stateMu.Unlock()
+		if !ok {
+			c.quarantine(fmt.Errorf("%w: unexpected response request_id %q", ErrProtocolViolation, resp.RequestID))
+			return
+		}
+
+		ch <- callResult{resp: resp}
+	}
+}
+
+func (c *Client) quarantine(cause error) {
+	if cause == nil {
+		cause = ErrOutcomeUnknown
+	}
+
+	c.stateMu.Lock()
+	if c.closed || c.quarantined {
+		c.stateMu.Unlock()
+		return
+	}
+	c.quarantined = true
+	c.terminalErr = cause
+	pending := c.pending
+	c.pending = make(map[string]chan callResult)
+	c.stateMu.Unlock()
+
+	_ = c.conn.Close()
+	for _, ch := range pending {
+		select {
+		case ch <- callResult{err: cause}:
+		default:
+		}
+	}
+}
+
+func (c *Client) terminalErrorLocked() error {
+	if c.terminalErr != nil {
+		return c.terminalErr
+	}
+	if c.quarantined {
+		return ErrOutcomeUnknown
+	}
+	return ErrClosed
+}
+
 func (c *Client) Close() error {
-	return c.conn.Close()
+	c.stateMu.Lock()
+	if c.closed {
+		c.stateMu.Unlock()
+		return nil
+	}
+	c.closed = true
+	pending := c.pending
+	c.pending = make(map[string]chan callResult)
+	c.stateMu.Unlock()
+
+	err := c.conn.Close()
+	for _, ch := range pending {
+		select {
+		case ch <- callResult{err: ErrClosed}:
+		default:
+		}
+	}
+	return err
 }
 
 func (c *Client) SessionInfo() (sessionID string, epoch uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.stateMu.Lock()
+	defer c.stateMu.Unlock()
 	return c.sessionID, c.epoch
 }
