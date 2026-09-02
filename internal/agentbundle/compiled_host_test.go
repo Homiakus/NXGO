@@ -31,6 +31,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	bootstrap := readRepoFile(t, root, "agent/bundle/CompiledHostBootstrap.cs")
 	host := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.cs")
 	geometry := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.Geometry.cs")
+	transactions := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.Transactions.cs")
 	project := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/NXGO.Agent.NXHost.csproj")
 	build := readRepoFile(t, root, "scripts/build-agent.ps1")
 
@@ -74,6 +75,10 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"geometry.query_mass_properties",
 		"geometry.query_bounding_box",
 		"object.release",
+		"transaction.begin",
+		"transaction.commit",
+		"transaction.rollback",
+		"PreStartErrorCategory",
 	} {
 		if !strings.Contains(host, marker) {
 			t.Errorf("canonical NXHost missing Core/v2/router marker %q", marker)
@@ -94,13 +99,52 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 			t.Errorf("canonical Geometry adapter missing Core/lifetime marker %q", marker)
 		}
 	}
+	for _, marker := range []string{
+		"UndoTransactionLedger<Session.UndoMarkId>",
+		"Transactions.EnsureCanBegin();",
+		"Transactions.Take(txId);",
+		"session.SetUndoMark",
+		"session.DeleteUndoMark",
+		"session.UndoToMark",
+		"Journal.MarkStarted(requestId);",
+	} {
+		if !strings.Contains(transactions, marker) {
+			t.Errorf("canonical Transaction adapter missing Core/NX marker %q", marker)
+		}
+	}
+	for _, method := range []string{"StartTransactionCommit", "StartTransactionRollback"} {
+		start := strings.Index(transactions, "private static Task<byte[]> "+method)
+		if start < 0 {
+			t.Fatalf("canonical Transaction adapter missing %s", method)
+		}
+		end := strings.Index(transactions[start+1:], "\n    private static ")
+		body := transactions[start:]
+		if end >= 0 {
+			body = transactions[start : start+1+end]
+		}
+		claim := strings.Index(body, "Transactions.Take(txId);")
+		started := strings.Index(body, "Journal.MarkStarted(requestId);")
+		if claim < 0 || started < 0 || claim > started {
+			t.Errorf("%s must claim the Core transaction before marking NX mutation started", method)
+		}
+	}
+	beginStart := strings.Index(transactions, "private static Task<byte[]> StartTransactionBegin")
+	commitStart := strings.Index(transactions, "private static Task<byte[]> StartTransactionCommit")
+	if beginStart < 0 || commitStart <= beginStart {
+		t.Fatal("canonical Transaction adapter begin/commit layout is incomplete")
+	}
+	beginBody := transactions[beginStart:commitStart]
+	if strings.Index(beginBody, "Transactions.EnsureCanBegin();") > strings.Index(beginBody, "Journal.MarkStarted(requestId);") {
+		t.Fatal("transaction.begin capacity preflight must happen before journal started state")
+	}
+
 	for _, forbidden := range []string{
 		"public sealed class NxExecutor",
 		"public sealed class NamedPipeRequestServer",
 		"private static string ExtractJsonString",
 		"IndexOf(\"\\\"request_id\\\"\")",
 	} {
-		if strings.Contains(host, forbidden) || strings.Contains(geometry, forbidden) {
+		if strings.Contains(host, forbidden) || strings.Contains(geometry, forbidden) || strings.Contains(transactions, forbidden) {
 			t.Errorf("canonical NXHost reintroduced duplicated/manual runtime primitive: %q", forbidden)
 		}
 	}
