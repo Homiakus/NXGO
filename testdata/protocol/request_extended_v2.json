@@ -1,0 +1,27 @@
+{
+  "request_id": "req-русский-日本語-001",
+  "correlation_id": "corr-42",
+  "run_id": "run-crosslang",
+  "test_id": "test-wire-v2",
+  "op": "part.open",
+  "timeout_ms": 15000,
+  "tx_id": "tx-optional-context",
+  "payload": {
+    "path": "C:\\NXGO\\тест\\部品 {draft} \"quoted\".prt",
+    "note": "line1\nline2\twith-tab",
+    "enabled": true,
+    "count": 3,
+    "attack": {
+      "$type": "System.IO.FileInfo, System.IO.FileSystem",
+      "value": "must-remain-data"
+    },
+    "nested": {
+      "brace": "{not-json-structure}",
+      "items": ["α", "β", 42]
+    }
+  },
+  "trace_meta": {
+    "suite": "cross-language",
+    "source": "shared-golden"
+  }
+}
