@@ -59,9 +59,70 @@ public static class FrameCodec
     }
 }
 
+public sealed class OutcomeUnknownException : Exception
+{
+    public OutcomeUnknownException(string message) : base(message) {}
+}
+
 public sealed class NxExecutor
 {
-    private readonly Queue<Action> _queue = new Queue<Action>();
+    private sealed class WorkItem
+    {
+        private const int Queued = 0;
+        private const int Started = 1;
+        private const int Completed = 2;
+        private const int CancelledBeforeStart = 3;
+
+        private readonly Func<byte[]> _work;
+        private int _state;
+
+        public WorkItem(Func<byte[]> work)
+        {
+            if (work == null) throw new ArgumentNullException("work");
+            _work = work;
+            Done = new ManualResetEvent(false);
+        }
+
+        public ManualResetEvent Done { get; private set; }
+        public byte[] Result { get; private set; }
+        public Exception Error { get; private set; }
+        public int State { get { return Thread.VolatileRead(ref _state); } }
+
+        public bool TryCancelBeforeStart()
+        {
+            if (Interlocked.CompareExchange(ref _state, CancelledBeforeStart, Queued) != Queued)
+            {
+                return false;
+            }
+            Done.Set();
+            return true;
+        }
+
+        public void Execute()
+        {
+            if (Interlocked.CompareExchange(ref _state, Started, Queued) != Queued)
+            {
+                // Cancelled-before-start items remain harmless queue tombstones.
+                return;
+            }
+
+            try
+            {
+                Result = _work();
+            }
+            catch (Exception ex)
+            {
+                Error = ex;
+            }
+            finally
+            {
+                Thread.VolatileWrite(ref _state, Completed);
+                Done.Set();
+            }
+        }
+    }
+
+    private readonly Queue<WorkItem> _queue = new Queue<WorkItem>();
     private readonly object _sync = new object();
     private int _boundThreadId;
 
@@ -69,12 +130,21 @@ public sealed class NxExecutor
 
     public void BindToCurrentThread()
     {
-        _boundThreadId = Thread.CurrentThread.ManagedThreadId;
+        var current = Thread.CurrentThread.ManagedThreadId;
+        if (_boundThreadId != 0 && _boundThreadId != current)
+        {
+            throw new InvalidOperationException("NX executor is already bound to another thread");
+        }
+        _boundThreadId = current;
     }
 
     public int DrainUntilEmpty(int maxPerBatch)
     {
-        if (_boundThreadId != 0 && Thread.CurrentThread.ManagedThreadId != _boundThreadId)
+        if (_boundThreadId == 0)
+        {
+            throw new InvalidOperationException("NX executor is not bound to an execution thread");
+        }
+        if (Thread.CurrentThread.ManagedThreadId != _boundThreadId)
         {
             throw new InvalidOperationException("drain must occur on the bound NX execution thread");
         }
@@ -82,16 +152,16 @@ public sealed class NxExecutor
         var drained = 0;
         while (drained < maxPerBatch)
         {
-            Action action = null;
+            WorkItem item = null;
             lock (_sync)
             {
                 if (_queue.Count > 0)
                 {
-                    action = _queue.Dequeue();
+                    item = _queue.Dequeue();
                 }
             }
-            if (action == null) break;
-            action();
+            if (item == null) break;
+            item.Execute();
             drained++;
         }
         return drained;
@@ -99,38 +169,29 @@ public sealed class NxExecutor
 
     public byte[] EnqueueSync(Func<byte[]> work, int timeoutMs)
     {
-        var mre = new ManualResetEvent(false);
-        byte[] result = null;
-        Exception capturedEx = null;
-
-        Action item = delegate
-        {
-            try
-            {
-                result = work();
-            }
-            catch (Exception ex)
-            {
-                capturedEx = ex;
-            }
-            finally
-            {
-                mre.Set();
-            }
-        };
-
+        var item = new WorkItem(work);
         lock (_sync)
         {
             _queue.Enqueue(item);
         }
 
-        if (!mre.WaitOne(timeoutMs > 0 ? timeoutMs : 30000, false))
+        var timeout = timeoutMs > 0 ? timeoutMs : 30000;
+        if (!item.Done.WaitOne(timeout, false))
         {
-            throw new TimeoutException("operation timed out waiting for NX execution thread");
+            if (item.TryCancelBeforeStart())
+            {
+                throw new TimeoutException("operation timed out and was cancelled before NX execution started");
+            }
+
+            // A completion racing the timeout is still a known final outcome.
+            if (!item.Done.WaitOne(0, false))
+            {
+                throw new OutcomeUnknownException("operation timed out after NX execution started; outcome is unknown and worker must be quarantined");
+            }
         }
 
-        if (capturedEx != null) throw capturedEx;
-        return result;
+        if (item.Error != null) throw item.Error;
+        return item.Result;
     }
 }
 
@@ -250,6 +311,10 @@ public sealed class ObjectRegistry
             if (reg.Target == null)
             {
                 throw new InvalidOperationException("object target is null for handle: " + objectId);
+            }
+            if (!(reg.Target is T))
+            {
+                throw new InvalidOperationException(string.Format("object kind/type mismatch for handle {0}: registered={1}, requested={2}", objectId, reg.Kind, typeof(T).Name));
             }
             return (T)reg.Target;
         }
@@ -711,13 +776,13 @@ public class Program
 
                     if (op == "part.close")
                     {
-                        string objId = ExtractJsonString(payloadRaw, "object_id");
+                        string objId = ExtractHandleObjectId(payloadRaw, "part_ref", "assembly_part_ref");
                         Part part = ResolvePartFromPayload(session, payloadRaw);
                         string partName = part.Name;
                         bool save = ExtractJsonBool(payloadRaw, "save", false);
                         if (save)
                         {
-                            try { part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False); } catch {}
+                            part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
                         }
                         part.Close(BasePart.CloseWholeTree.False, BasePart.CloseModified.CloseModified, null);
                         if (!string.IsNullOrEmpty(objId))
@@ -769,6 +834,7 @@ public class Program
                     if (op == "feature.create_block")
                     {
                         Part part = ResolvePartFromPayload(session, payloadRaw);
+                        RequireCreateOnlyFeatureOptions(payloadRaw);
                         double[] origin = ExtractJsonDoubleArray3(payloadRaw, "origin");
                         double length = ExtractJsonDouble(payloadRaw, "length", 100.0);
                         double width = ExtractJsonDouble(payloadRaw, "width", 100.0);
@@ -821,6 +887,7 @@ public class Program
                     if (op == "feature.create_cylinder")
                     {
                         Part part = ResolvePartFromPayload(session, payloadRaw);
+                        RequireCreateOnlyFeatureOptions(payloadRaw);
                         double[] origin = ExtractJsonDoubleArray3(payloadRaw, "origin");
                         double[] dir = ExtractJsonDoubleArray3(payloadRaw, "direction");
                         if (dir[0] == 0 && dir[1] == 0 && dir[2] == 0) { dir[2] = 1.0; }
@@ -874,20 +941,24 @@ public class Program
                         var uf = NXOpen.UF.UFSession.GetUFSession();
                         var bodyTags = new NXOpen.Tag[] { body.Tag };
                         double density = 1.0;
-                        int units = 3; // 3 = Standard metric units in UF_MODL
-                        int mode = 1;  // 1 = solid body
-                        int accuracy = 1; // 1 = standard accuracy
+                        bool imperial = body.OwningPart != null && body.OwningPart.PartUnits == Part.Units.Inches;
+                        int units = imperial ? 1 : 4; // UF: 1=lb/in, 4=kg/m
+                        int mode = 1;
+                        int accuracy = 1;
                         double[] accValues = new double[11];
                         double[] massProps = new double[47];
                         double[] statistics = new double[13];
                         uf.Modl.AskMassProps3d(bodyTags, 1, mode, units, density, accuracy, accValues, massProps, statistics);
 
-                        double area = massProps[0] / 10000.0;
-                        double vol = massProps[1] / 1000000.0;
-                        double mass = massProps[2] / 1000000.0;
-                        double centX = massProps[3] / 100.0;
-                        double centY = massProps[4] / 100.0;
-                        double centZ = massProps[5] / 100.0;
+                        double lengthScale = imperial ? 1.0 : 1000.0;
+                        double areaScale = imperial ? 1.0 : 1000000.0;
+                        double volumeScale = imperial ? 1.0 : 1000000000.0;
+                        double area = massProps[0] * areaScale;
+                        double vol = massProps[1] * volumeScale;
+                        double mass = massProps[2];
+                        double centX = massProps[3] * lengthScale;
+                        double centY = massProps[4] * lengthScale;
+                        double centZ = massProps[5] * lengthScale;
 
                         var respJson = string.Format(
                             System.Globalization.CultureInfo.InvariantCulture,
@@ -904,8 +975,9 @@ public class Program
                         double[] minMax = new double[6];
                         uf.Modl.AskBoundingBox(body.Tag, minMax);
 
-                        double minX = minMax[0] / 1000.0, minY = minMax[1] / 1000.0, minZ = minMax[2] / 1000.0;
-                        double maxX = minMax[3] / 1000.0, maxY = minMax[4] / 1000.0, maxZ = minMax[5] / 1000.0;
+                        // UF_MODL_ask_bounding_box already returns owning-part length units.
+                        double minX = minMax[0], minY = minMax[1], minZ = minMax[2];
+                        double maxX = minMax[3], maxY = minMax[4], maxZ = minMax[5];
                         double dx = maxX - minX, dy = maxY - minY, dz = maxZ - minZ;
 
                         var respJson = string.Format(
@@ -1175,6 +1247,12 @@ public class Program
                     return FormatError(reqId, "INVALID_ARGUMENT", "unsupported operation: " + op, 0, Health.Value.ToString().ToLowerInvariant(), true);
                 }, 60000);
             }
+            catch (OutcomeUnknownException outcomeEx)
+            {
+                Health.Set(SessionHealth.Lost);
+                session.LogFile.WriteLine("[NXGO][OUTCOME_UNKNOWN] op=" + op + " msg=" + outcomeEx.Message);
+                return FormatError(reqId, "OUTCOME_UNKNOWN", outcomeEx.Message, 0, "lost", false);
+            }
             catch (NXException nxEx)
             {
                 session.LogFile.WriteLine("[NXGO][NXException] op=" + op + " code=" + nxEx.ErrorCode + " msg=" + nxEx.Message);
@@ -1198,6 +1276,29 @@ public class Program
         return Encoding.UTF8.GetBytes("error|unknown_format");
     }
 
+    private static T ResolveRegisteredHandle<T>(string handleJson, string expectedKind) where T : TaggedObject
+    {
+        if (string.IsNullOrEmpty(handleJson) || !handleJson.StartsWith("{"))
+        {
+            throw new InvalidOperationException("missing " + expectedKind + " reference object");
+        }
+
+        string objectId = ExtractJsonString(handleJson, "object_id");
+        string sessionId = ExtractJsonString(handleJson, "session_id");
+        string kind = ExtractJsonString(handleJson, "kind");
+        if (string.IsNullOrEmpty(objectId)) throw new InvalidOperationException(expectedKind + " reference is missing object_id");
+        if (string.IsNullOrEmpty(sessionId)) throw new InvalidOperationException(expectedKind + " reference is missing session_id");
+        if (!HasJsonKey(handleJson, "epoch")) throw new InvalidOperationException(expectedKind + " reference is missing epoch");
+        if (string.IsNullOrEmpty(kind)) throw new InvalidOperationException(expectedKind + " reference is missing kind");
+        if (!string.Equals(kind, expectedKind, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(string.Format("wrong object kind: got {0}, expected {1}", kind, expectedKind));
+        }
+
+        ulong epoch = ExtractJsonUlong(handleJson, "epoch", 0);
+        return Registry.Resolve<T>(objectId, epoch, sessionId);
+    }
+
     private static Part ResolvePartFromPayload(Session session, string payloadJson)
     {
         string partRefJson = ExtractJsonObjectOrSection(payloadJson, "assembly_part_ref");
@@ -1205,55 +1306,63 @@ public class Program
         {
             partRefJson = ExtractJsonObjectOrSection(payloadJson, "part_ref");
         }
-        if (!string.IsNullOrEmpty(partRefJson) && partRefJson.StartsWith("{"))
+        if (!string.IsNullOrEmpty(partRefJson))
         {
-            string subObjId = ExtractJsonString(partRefJson, "object_id");
-            if (!string.IsNullOrEmpty(subObjId))
-            {
-                ulong epoch = ExtractJsonUlong(partRefJson, "epoch", Registry.Epoch);
-                string sessId = ExtractJsonString(partRefJson, "session_id");
-                if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-                return Registry.Resolve<Part>(subObjId, epoch, sessId);
-            }
+            return ResolveRegisteredHandle<Part>(partRefJson, "Part");
         }
-        string objId = ExtractJsonString(payloadJson, "object_id");
-        if (!string.IsNullOrEmpty(objId))
+        if (HasJsonKey(payloadJson, "object_id"))
         {
-            ulong epoch = ExtractJsonUlong(payloadJson, "epoch", Registry.Epoch);
-            string sessId = ExtractJsonString(payloadJson, "session_id");
-            if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-            try { return Registry.Resolve<Part>(objId, epoch, sessId); } catch {}
+            return ResolveRegisteredHandle<Part>(payloadJson, "Part");
         }
-        if (session.Parts.Work != null) return session.Parts.Work;
-        if (session.Parts.Display != null) return session.Parts.Display;
-        throw new InvalidOperationException("no active work or display part in session");
+        throw new InvalidOperationException("missing part reference in payload; implicit work/display fallback is forbidden");
     }
 
     private static Body ResolveBodyFromPayload(Session session, string payloadJson)
     {
-        string objId = ExtractJsonString(payloadJson, "object_id");
-        if (!string.IsNullOrEmpty(objId))
-        {
-            ulong epoch = ExtractJsonUlong(payloadJson, "epoch", Registry.Epoch);
-            string sessId = ExtractJsonString(payloadJson, "session_id");
-            if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-            try { return Registry.Resolve<Body>(objId, epoch, sessId); } catch {}
-        }
         string bodyRefJson = ExtractJsonObjectOrSection(payloadJson, "body_ref");
-        if (!string.IsNullOrEmpty(bodyRefJson) && bodyRefJson.StartsWith("{"))
+        if (!string.IsNullOrEmpty(bodyRefJson))
         {
-            string subObjId = ExtractJsonString(bodyRefJson, "object_id");
-            if (!string.IsNullOrEmpty(subObjId))
+            return ResolveRegisteredHandle<Body>(bodyRefJson, "Body");
+        }
+        if (HasJsonKey(payloadJson, "object_id"))
+        {
+            return ResolveRegisteredHandle<Body>(payloadJson, "Body");
+        }
+        throw new InvalidOperationException("missing body reference in payload; implicit first-body fallback is forbidden");
+    }
+
+    private static bool HasJsonKey(string json, string key)
+    {
+        if (string.IsNullOrEmpty(json)) return false;
+        return json.IndexOf("\"" + key + "\"", StringComparison.Ordinal) >= 0;
+    }
+
+    private static string ExtractHandleObjectId(string payloadJson, params string[] referenceKeys)
+    {
+        foreach (var key in referenceKeys)
+        {
+            string handleJson = ExtractJsonObjectOrSection(payloadJson, key);
+            if (!string.IsNullOrEmpty(handleJson))
             {
-                ulong epoch = ExtractJsonUlong(bodyRefJson, "epoch", Registry.Epoch);
-                string sessId = ExtractJsonString(bodyRefJson, "session_id");
-                if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-                return Registry.Resolve<Body>(subObjId, epoch, sessId);
+                string objectId = ExtractJsonString(handleJson, "object_id");
+                if (!string.IsNullOrEmpty(objectId)) return objectId;
             }
         }
-        Part part = ResolvePartFromPayload(session, payloadJson);
-        foreach (Body b in part.Bodies) return b;
-        throw new InvalidOperationException("no bodies found in part");
+        return ExtractJsonString(payloadJson, "object_id");
+    }
+
+    private static void RequireCreateOnlyFeatureOptions(string payloadJson)
+    {
+        string booleanOp = ExtractJsonString(payloadJson, "boolean_op");
+        if (!string.IsNullOrEmpty(booleanOp) && !string.Equals(booleanOp, "create", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new NotSupportedException("boolean operation is not implemented by production Agent: " + booleanOp);
+        }
+        string target = ExtractJsonObjectOrSection(payloadJson, "target_body_ref");
+        if (!string.IsNullOrEmpty(target) && target != "{}")
+        {
+            throw new NotSupportedException("target_body_ref is not implemented by production Agent");
+        }
     }
 
     private static double ExtractJsonDouble(string json, string key, double defaultVal)
@@ -1409,24 +1518,13 @@ public class Program
     private static Component ResolveComponentFromPayload(Session session, string payloadJson)
     {
         string compRefJson = ExtractJsonObjectOrSection(payloadJson, "component_ref");
-        if (!string.IsNullOrEmpty(compRefJson) && compRefJson.StartsWith("{"))
+        if (!string.IsNullOrEmpty(compRefJson))
         {
-            string subObjId = ExtractJsonString(compRefJson, "object_id");
-            if (!string.IsNullOrEmpty(subObjId))
-            {
-                ulong epoch = ExtractJsonUlong(compRefJson, "epoch", Registry.Epoch);
-                string sessId = ExtractJsonString(compRefJson, "session_id");
-                if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-                return Registry.Resolve<Component>(subObjId, epoch, sessId);
-            }
+            return ResolveRegisteredHandle<Component>(compRefJson, "Component");
         }
-        string objId = ExtractJsonString(payloadJson, "object_id");
-        if (!string.IsNullOrEmpty(objId))
+        if (HasJsonKey(payloadJson, "object_id"))
         {
-            ulong epoch = ExtractJsonUlong(payloadJson, "epoch", Registry.Epoch);
-            string sessId = ExtractJsonString(payloadJson, "session_id");
-            if (string.IsNullOrEmpty(sessId)) sessId = Registry.SessionId;
-            return Registry.Resolve<Component>(objId, epoch, sessId);
+            return ResolveRegisteredHandle<Component>(payloadJson, "Component");
         }
         throw new InvalidOperationException("missing component reference in payload");
     }
