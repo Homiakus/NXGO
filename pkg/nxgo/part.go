@@ -14,6 +14,9 @@ type Part struct {
 }
 
 func (s *Session) NewPart(ctx context.Context, name, units string) (*Part, error) {
+	if err := s.validateOpen(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.PartNewRequest{
 		Name:  name,
 		Units: units,
@@ -48,6 +51,9 @@ func (s *Session) NewPart(ctx context.Context, name, units string) (*Part, error
 }
 
 func (s *Session) OpenPart(ctx context.Context, filePath string) (*Part, error) {
+	if err := s.validateOpen(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.PartOpenRequest{
 		Path: filePath,
 	})
@@ -81,6 +87,9 @@ func (s *Session) OpenPart(ctx context.Context, filePath string) (*Part, error) 
 }
 
 func (p *Part) Save(ctx context.Context) (*protocol.PartSaveResponse, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.PartSaveRequest{
 		PartRef: &p.Ref,
 	})
@@ -104,6 +113,9 @@ func (p *Part) Save(ctx context.Context) (*protocol.PartSaveResponse, error) {
 }
 
 func (p *Part) Close(ctx context.Context, save bool) error {
+	if err := p.validate(); err != nil {
+		return err
+	}
 	reqData, err := protocol.EncodePayload(protocol.PartCloseRequest{
 		PartRef: &p.Ref,
 		Save:    save,
@@ -128,6 +140,9 @@ func (p *Part) Close(ctx context.Context, save bool) error {
 }
 
 func (p *Part) Summary(ctx context.Context) (*protocol.PartSummaryResponse, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
 	reqData, err := protocol.EncodePayload(protocol.PartSummaryRequest{
 		PartRef: &p.Ref,
 	})
