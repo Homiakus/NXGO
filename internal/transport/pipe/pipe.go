@@ -379,7 +379,7 @@ func (c *Client) readLoop() {
 			if closed || quarantined {
 				return
 			}
-			c.quarantine(fmt.Errorf("%w: receive failed: %v", ErrOutcomeUnknown, err))
+			c.quarantine(classifyReceiveError(err))
 			return
 		}
 
@@ -406,6 +406,15 @@ func (c *Client) readLoop() {
 
 		ch <- callResult{resp: resp}
 	}
+}
+
+func classifyReceiveError(err error) error {
+	if errors.Is(err, protocol.ErrInvalidLength) ||
+		errors.Is(err, protocol.ErrLengthMismatch) ||
+		errors.Is(err, protocol.ErrTruncatedFrame) {
+		return fmt.Errorf("%w: malformed response frame: %v", ErrProtocolViolation, err)
+	}
+	return fmt.Errorf("%w: receive failed: %v", ErrOutcomeUnknown, err)
 }
 
 func (c *Client) quarantine(cause error) {
