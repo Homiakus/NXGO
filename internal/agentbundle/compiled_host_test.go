@@ -84,7 +84,10 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"BuilderScope<NXOpen.Features.CylinderBuilder>",
 		"GeometryUnitContract",
 		"ContractFor(body).NormalizeBoundingBox",
-		"Registry.Register(body, \"Body\", requestId)",
+		"MaxProducedHandlesPerRequest = 256",
+		"ownerObjectId: partHandle.ObjectId",
+		"leaseScopeId: requestId",
+		"leaseScopeLimit: MaxProducedHandlesPerRequest",
 		"StartObjectRelease",
 	} {
 		if !strings.Contains(geometry, marker) {
