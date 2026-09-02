@@ -7,13 +7,20 @@ import (
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
 
+func (s *Session) validateOpen() error {
+	if s == nil || s.client == nil {
+		return ErrSessionClosed
+	}
+	return nil
+}
+
 // validateObjectHandle rejects references that cannot belong to this live SDK
 // session before any IPC is attempted. Server-side validation remains
 // mandatory, but client-side fail-closed checks prevent accidental cross-
 // session and stale-epoch mutations from reaching NX at all.
 func (s *Session) validateObjectHandle(ref *protocol.ObjectHandleWire, expectedKinds ...string) error {
-	if s == nil || s.client == nil {
-		return ErrSessionClosed
+	if err := s.validateOpen(); err != nil {
+		return err
 	}
 	if ref == nil || strings.TrimSpace(ref.ObjectID) == "" {
 		return ErrNullObjectRef
