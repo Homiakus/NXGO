@@ -14,8 +14,9 @@ import (
 )
 
 // TestRealNXCanonicalCompiledHost proves the H4 migration lane end-to-end:
-// run_journal -> minimal CompiledHostBootstrap.cs -> NXGO.Agent.NXHost.dll ->
-// NXGO.Agent.Core.dll -> shared NxExecutor/RequestJournal/HandleRegistry on the
+// supervisor canonical mode -> run_journal -> minimal CompiledHostBootstrap.cs ->
+// Newtonsoft.Json.dll -> NXGO.Protocol.dll -> NXGO.Agent.Core.dll ->
+// NXGO.Agent.NXHost.dll -> shared NxExecutor/RequestJournal/HandleRegistry on the
 // NX execution thread. It runs geometry, transaction, lifetime and Assembly
 // oracles through canonical adapters. E3 is earned only when this fixture is
 // actually executed on the self-hosted Siemens NX runner.
@@ -33,14 +34,13 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 		agentBin = filepath.Join(repoRoot, "agent", "bin")
 	}
 
-	coreDLL := filepath.Join(agentBin, "NXGO.Agent.Core.dll")
-	hostDLL := filepath.Join(agentBin, "NXGO.Agent.NXHost.dll")
 	missing := ""
-	if _, err := os.Stat(coreDLL); err != nil {
-		missing = coreDLL
-	}
-	if _, err := os.Stat(hostDLL); err != nil {
-		missing = hostDLL
+	for _, dll := range []string{"Newtonsoft.Json.dll", "NXGO.Protocol.dll", "NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll"} {
+		path := filepath.Join(agentBin, dll)
+		if _, err := os.Stat(path); err != nil {
+			missing = path
+			break
+		}
 	}
 	if missing != "" {
 		if os.Getenv("NXGO_REQUIRE_COMPILED_HOST") == "1" {
@@ -71,7 +71,8 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 
 	worker, err := supervisor.StartWorker(ctx, supervisor.WorkerConfig{
 		NXHome:         getNXHome(t),
-		JournalPath:    bootstrap,
+		AgentMode:      supervisor.AgentModeCanonical,
+		AgentBin:       agentBin,
 		StartupTimeout: 45 * time.Second,
 	})
 	if err != nil {

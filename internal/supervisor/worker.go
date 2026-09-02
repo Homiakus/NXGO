@@ -235,7 +235,7 @@ func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath str
 			return "", "", fmt.Errorf("resolve canonical AgentBin: %w", absErr)
 		}
 		agentBin = absBin
-		for _, dll := range []string{"NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll"} {
+		for _, dll := range []string{"Newtonsoft.Json.dll", "NXGO.Protocol.dll", "NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll"} {
 			path := filepath.Join(agentBin, dll)
 			if _, statErr := os.Stat(path); statErr != nil {
 				return "", "", fmt.Errorf("canonical NX Agent artifact unavailable %s: %w", path, statErr)

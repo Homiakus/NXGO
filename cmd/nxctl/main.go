@@ -154,8 +154,9 @@ func runTest(ctx context.Context, target string) error {
 		if err := runCmd(ctx, "go", "vet", "./..."); err != nil { return err }
 		if err := runCmd(ctx, "go", "run", "./cmd/invariantcheck"); err != nil { return err }
 		if _, err := exec.LookPath("dotnet"); err != nil {
-			return errors.New("dotnet SDK is required by the canonical fast gate because NXGO includes the NX-independent Agent core")
+			return errors.New("dotnet SDK is required by the canonical fast gate because NXGO includes the NX-independent Protocol and Agent core")
 		}
+		if err := runCmd(ctx, "dotnet", "test", "agent/NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj", "-c", "Release", "--nologo"); err != nil { return err }
 		return runCmd(ctx, "dotnet", "test", "agent/NXGO.Agent.Core.Tests/NXGO.Agent.Core.Tests.csproj", "-c", "Release", "--nologo")
 	case "fuzz":
 		fuzzTime := strings.TrimSpace(os.Getenv("NXGO_FUZZTIME"))
