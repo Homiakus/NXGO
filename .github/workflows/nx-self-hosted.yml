@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 30
     env:
       NXGO_NX_HOME: ${{ inputs.nx_home || vars.NXGO_NX_HOME }}
+      NXGO_REQUIRE_COMPILED_HOST: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -47,9 +48,25 @@ jobs:
       - name: Build canonical and legacy parity Agents
         shell: pwsh
         run: ./scripts/build-agent.ps1
+      - name: Verify canonical compiled host artifacts
+        shell: pwsh
+        run: |
+          $required = @(
+            (Join-Path $env:NXGO_AGENT_BIN 'NXGO.Agent.Core.dll'),
+            (Join-Path $env:NXGO_AGENT_BIN 'NXGO.Agent.NXHost.dll'),
+            (Join-Path $env:GITHUB_WORKSPACE 'agent\bundle\CompiledHostBootstrap.cs')
+          )
+          foreach ($path in $required) {
+            if (!(Test-Path $path)) { throw "required canonical Agent artifact missing: $path" }
+          }
       - name: Invariant gate
         shell: pwsh
         run: go run ./cmd/invariantcheck
+      - name: Canonical compiled-host smoke
+        shell: pwsh
+        run: go test -v -timeout 90s ./tests/nx -run '^TestRealNXCanonicalCompiledHost$'
+        env:
+          NXGO_RUN_REAL_NX: '1'
       - name: Real Siemens NX semantic suite
         shell: pwsh
         run: go run ./cmd/nxctl test nx
