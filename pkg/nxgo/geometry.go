@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
@@ -213,76 +215,61 @@ func (p *Part) Bodies(ctx context.Context) ([]*Body, error) {
 	return bodies, nil
 }
 
+// MassProperties deliberately aggregates explicit Body results instead of
+// sending a PartRef to the current production Agent. The audited Agent can
+// otherwise fall back to the first body, which is semantically wrong for
+// multi-body parts. This N+1 implementation is a safety bridge until the
+// backend exposes a verified bulk part-level operation.
 func (p *Part) MassProperties(ctx context.Context) (*MassProperties, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
 	}
-	reqData, err := protocol.EncodePayload(protocol.GeometryQueryMassPropertiesRequest{
-		PartRef: &p.Ref,
-	})
+	bodies, err := p.Bodies(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer p.releaseTemporaryBodies(bodies)
 
-	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: newRequestID("geometry.query_mass_properties.part"),
-		Op:        "geometry.query_mass_properties",
-		Payload:   reqData,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if resp.Status != protocol.StatusOK {
-		return nil, formatError(resp.Error)
+	if len(bodies) == 0 {
+		return &MassProperties{SolidType: "empty"}, nil
 	}
 
-	payload, err := protocol.DecodePayload[protocol.GeometryQueryMassPropertiesResponse](resp.Payload)
-	if err != nil {
-		return nil, err
+	items := make([]*MassProperties, 0, len(bodies))
+	for _, body := range bodies {
+		props, err := body.MassProperties(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("mass properties for body %s: %w", body.Ref.ObjectID, err)
+		}
+		items = append(items, props)
 	}
-
-	return &MassProperties{
-		Volume:    payload.Volume,
-		Area:      payload.Area,
-		Mass:      payload.Mass,
-		Centroid:  payload.Centroid,
-		SolidType: payload.SolidType,
-	}, nil
+	return aggregateMassProperties(items), nil
 }
 
+// BoundingBox uses explicit BodyRefs for the same fail-closed reason as
+// MassProperties: a part-level resolver must never silently select one body.
 func (p *Part) BoundingBox(ctx context.Context) (*BoundingBox, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
 	}
-	reqData, err := protocol.EncodePayload(protocol.GeometryQueryBoundingBoxRequest{
-		PartRef: &p.Ref,
-	})
+	bodies, err := p.Bodies(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer p.releaseTemporaryBodies(bodies)
 
-	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
-		RequestID: newRequestID("geometry.query_bounding_box.part"),
-		Op:        "geometry.query_bounding_box",
-		Payload:   reqData,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if resp.Status != protocol.StatusOK {
-		return nil, formatError(resp.Error)
+	if len(bodies) == 0 {
+		return &BoundingBox{}, nil
 	}
 
-	payload, err := protocol.DecodePayload[protocol.GeometryQueryBoundingBoxResponse](resp.Payload)
-	if err != nil {
-		return nil, err
+	boxes := make([]*BoundingBox, 0, len(bodies))
+	for _, body := range bodies {
+		box, err := body.BoundingBox(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("bounding box for body %s: %w", body.Ref.ObjectID, err)
+		}
+		boxes = append(boxes, box)
 	}
-
-	return &BoundingBox{
-		MinCorner:  payload.MinCorner,
-		MaxCorner:  payload.MaxCorner,
-		Dimensions: payload.Dimensions,
-	}, nil
+	return aggregateBoundingBoxes(boxes), nil
 }
 
 func (b *Body) MassProperties(ctx context.Context) (*MassProperties, error) {
@@ -355,4 +342,89 @@ func (b *Body) BoundingBox(ctx context.Context) (*BoundingBox, error) {
 		MaxCorner:  payload.MaxCorner,
 		Dimensions: payload.Dimensions,
 	}, nil
+}
+
+func aggregateMassProperties(items []*MassProperties) *MassProperties {
+	result := &MassProperties{SolidType: "aggregate"}
+	if len(items) == 0 {
+		result.SolidType = "empty"
+		return result
+	}
+
+	var massWeighted Point3D
+	var volumeWeighted Point3D
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		result.Volume += item.Volume
+		result.Area += item.Area
+		result.Mass += item.Mass
+		for axis := 0; axis < 3; axis++ {
+			massWeighted[axis] += item.Centroid[axis] * item.Mass
+			volumeWeighted[axis] += item.Centroid[axis] * item.Volume
+		}
+	}
+
+	if math.Abs(result.Mass) > 1e-15 {
+		for axis := 0; axis < 3; axis++ {
+			result.Centroid[axis] = massWeighted[axis] / result.Mass
+		}
+	} else if math.Abs(result.Volume) > 1e-15 {
+		for axis := 0; axis < 3; axis++ {
+			result.Centroid[axis] = volumeWeighted[axis] / result.Volume
+		}
+	}
+	return result
+}
+
+func aggregateBoundingBoxes(boxes []*BoundingBox) *BoundingBox {
+	if len(boxes) == 0 {
+		return &BoundingBox{}
+	}
+
+	result := &BoundingBox{
+		MinCorner: Point3D{math.Inf(1), math.Inf(1), math.Inf(1)},
+		MaxCorner: Point3D{math.Inf(-1), math.Inf(-1), math.Inf(-1)},
+	}
+	seen := false
+	for _, box := range boxes {
+		if box == nil {
+			continue
+		}
+		seen = true
+		for axis := 0; axis < 3; axis++ {
+			result.MinCorner[axis] = math.Min(result.MinCorner[axis], box.MinCorner[axis])
+			result.MaxCorner[axis] = math.Max(result.MaxCorner[axis], box.MaxCorner[axis])
+		}
+	}
+	if !seen {
+		return &BoundingBox{}
+	}
+	for axis := 0; axis < 3; axis++ {
+		result.Dimensions[axis] = result.MaxCorner[axis] - result.MinCorner[axis]
+	}
+	return result
+}
+
+func (p *Part) releaseTemporaryBodies(bodies []*Body) {
+	if p == nil || p.session == nil || len(bodies) == 0 {
+		return
+	}
+	refs := make([]protocol.ObjectHandleWire, 0, len(bodies))
+	for _, body := range bodies {
+		if body != nil && body.Ref.ObjectID != "" {
+			refs = append(refs, body.Ref)
+		}
+	}
+	if len(refs) == 0 {
+		return
+	}
+
+	// Cleanup has its own bounded context. If even handle release becomes
+	// ambiguous, the transport's quarantine hook will recycle the worker rather
+	// than allow an uncertain session to continue.
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_ = p.session.ReleaseObjects(cleanupCtx, refs...)
 }
