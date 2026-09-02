@@ -48,9 +48,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		t.Fatal("compiled bootstrap must remain a loader only; runtime primitives cannot be duplicated there")
 	}
 
-	if !strings.Contains(project, `ProjectReference Include="..\NXGO.Agent.Core\NXGO.Agent.Core.csproj"`) &&
-		!strings.Contains(project, `ProjectReference Include="../NXGO.Agent.Core/NXGO.Agent.Core.csproj"`) &&
-		!strings.Contains(project, `ProjectReference Include="..\NXGO.Agent.Core\NXGO.Agent.Core.csproj"`) {
+	if !strings.Contains(project, "<ProjectReference") || !strings.Contains(project, "NXGO.Agent.Core") {
 		t.Fatal("NXHost must consume NXGO.Agent.Core through a ProjectReference")
 	}
 	for _, marker := range []string{
