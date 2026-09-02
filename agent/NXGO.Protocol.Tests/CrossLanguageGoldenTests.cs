@@ -18,7 +18,8 @@ public sealed class CrossLanguageGoldenTests
         Assert.Equal(2, msg.ProtocolVersion.Major);
         Assert.Equal(0, msg.ProtocolVersion.Minor);
         Assert.Equal("dedicated-worker", msg.RequestedMode);
-        Assert.Equal(new[] { "geometry", "assembly", "drafting" }, msg.RequestedFeatures);
+        Assert.NotNull(msg.RequestedFeatures);
+        Assert.Equal(new[] { "geometry", "assembly", "drafting" }, msg.RequestedFeatures!);
         Assert.Equal("инженер-日本語", msg.ClientUser);
         Assert.Equal("nonce-crosslang-001", msg.Nonce);
         AssertSemanticRoundTrip(golden, _codec.Serialize(msg));
@@ -38,14 +39,16 @@ public sealed class CrossLanguageGoldenTests
         Assert.Equal(15000, req.TimeoutMs);
         Assert.Equal("tx-optional-context", req.TxId);
         Assert.NotNull(req.TraceMeta);
-        Assert.Equal("cross-language", req.TraceMeta!["suite"]);
+        var traceMeta = req.TraceMeta!;
+        Assert.Equal("cross-language", traceMeta["suite"]);
 
         Assert.NotNull(req.Payload);
-        Assert.Equal("C:\\NXGO\\тест\\部品 {draft} \"quoted\".prt", req.Payload!["path"]);
-        var attack = Assert.IsType<Dictionary<string, object>>(req.Payload["attack"]);
+        var payload = req.Payload!;
+        Assert.Equal("C:\\NXGO\\тест\\部品 {draft} \"quoted\".prt", payload["path"]);
+        var attack = Assert.IsType<Dictionary<string, object>>(payload["attack"]);
         Assert.Equal("System.IO.FileInfo, System.IO.FileSystem", attack["$type"]);
         Assert.Equal("must-remain-data", attack["value"]);
-        Assert.DoesNotContain(req.Payload.Values, value => value is Type);
+        Assert.DoesNotContain(payload.Values, value => value is Type);
 
         AssertSemanticRoundTrip(golden, _codec.Serialize(req));
     }
@@ -58,13 +61,16 @@ public sealed class CrossLanguageGoldenTests
 
         Assert.Equal("ERROR", resp.Status);
         Assert.NotNull(resp.Error);
-        Assert.Equal("INVALID_ARGUMENT", resp.Error!.Category);
-        Assert.Equal("part.open", resp.Error.Operation);
-        Assert.Equal("corr-42", resp.Error.CorrelationId);
-        Assert.Equal("shared cross-language fixture", resp.Error.Diagnostic);
-        Assert.Equal(new[] { "warning α", "warning β" }, resp.Warnings);
+        var error = resp.Error!;
+        Assert.Equal("INVALID_ARGUMENT", error.Category);
+        Assert.Equal("part.open", error.Operation);
+        Assert.Equal("corr-42", error.CorrelationId);
+        Assert.Equal("shared cross-language fixture", error.Diagnostic);
+        Assert.NotNull(resp.Warnings);
+        Assert.Equal(new[] { "warning α", "warning β" }, resp.Warnings!);
         Assert.NotNull(resp.Timing);
-        Assert.Equal(6, resp.Timing!.TotalDurationMs);
+        var timing = resp.Timing!;
+        Assert.Equal(6, timing.TotalDurationMs);
 
         AssertSemanticRoundTrip(golden, _codec.Serialize(resp));
     }
@@ -77,14 +83,16 @@ public sealed class CrossLanguageGoldenTests
 
         Assert.Equal("OK", resp.Status);
         Assert.NotNull(resp.ProducedHandles);
-        Assert.Equal(2, resp.ProducedHandles!.Length);
-        Assert.Equal((uint)3, resp.ProducedHandles[0].Generation);
-        Assert.Equal("Feature", resp.ProducedHandles[0].Kind);
-        Assert.Equal("req-handles-001", resp.ProducedHandles[0].LeaseScopeId);
-        Assert.Equal((uint)5, resp.ProducedHandles[1].Generation);
-        Assert.Equal((uint)102, resp.ProducedHandles[1].NativeTag);
+        var handles = resp.ProducedHandles!;
+        Assert.Equal(2, handles.Length);
+        Assert.Equal((uint)3, handles[0].Generation);
+        Assert.Equal("Feature", handles[0].Kind);
+        Assert.Equal("req-handles-001", handles[0].LeaseScopeId);
+        Assert.Equal((uint)5, handles[1].Generation);
+        Assert.Equal((uint)102, handles[1].NativeTag);
         Assert.NotNull(resp.Timing);
-        Assert.Equal(14, resp.Timing!.TotalDurationMs);
+        var timing = resp.Timing!;
+        Assert.Equal(14, timing.TotalDurationMs);
 
         AssertSemanticRoundTrip(golden, _codec.Serialize(resp));
     }
