@@ -78,7 +78,9 @@ public sealed class HandleRegistryTests
         var a2 = registry.Register(new object(), "Feature", "request-a");
         var b1 = registry.Register(new object(), "Body", "request-b");
 
+        Assert.Equal(2, registry.CountScope("request-a"));
         Assert.Equal(2, registry.ReleaseScope("request-a"));
+        Assert.Equal(0, registry.CountScope("request-a"));
         Assert.Equal(1, registry.Count);
         Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(a1, "Body"));
         Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(a2, "Feature"));
@@ -94,6 +96,58 @@ public sealed class HandleRegistryTests
         {
             Assert.Equal(a2.Generation + 1, reused.Generation);
         }
+    }
+
+    [Fact]
+    public void Scope_budget_fails_closed_without_consuming_worker_capacity()
+    {
+        var registry = new HandleRegistry<object>("session-a", 4, capacity: 5);
+        registry.Register(new object(), "Body", "request-a", leaseScopeLimit: 2);
+        registry.Register(new object(), "Body", "request-a", leaseScopeLimit: 2);
+
+        var ex = Assert.Throws<HandleScopeCapacityException>(() =>
+            registry.Register(new object(), "Body", "request-a", leaseScopeLimit: 2));
+        Assert.Equal("request-a", ex.ScopeId);
+        Assert.Equal(2, ex.Capacity);
+        Assert.Equal(2, registry.Count);
+        Assert.Equal(2, registry.CountScope("request-a"));
+
+        var other = registry.Register(new object(), "Body", "request-b", leaseScopeLimit: 2);
+        Assert.NotNull(registry.Resolve(other, "Body"));
+        Assert.Equal(3, registry.Count);
+    }
+
+    [Fact]
+    public void Releasing_part_with_dependents_invalidates_entire_owned_graph()
+    {
+        var registry = new HandleRegistry<object>("session-a", 2, capacity: 8);
+        var part = registry.Register(new object(), "Part");
+        var feature = registry.Register(new object(), "Feature", ownerObjectId: part.ObjectId);
+        var body = registry.Register(new object(), "Body", ownerObjectId: part.ObjectId);
+        var faceProxy = registry.Register(new object(), "Face", ownerObjectId: body.ObjectId);
+        var unrelated = registry.Register(new object(), "Part");
+
+        Assert.Equal(5, registry.Count);
+        Assert.Equal(4, registry.ReleaseWithDependents(part));
+        Assert.Equal(1, registry.Count);
+
+        Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(part, "Part"));
+        Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(feature, "Feature"));
+        Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(body, "Body"));
+        Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(faceProxy, "Face"));
+        Assert.NotNull(registry.Resolve(unrelated, "Part"));
+    }
+
+    [Fact]
+    public void Dependent_registration_requires_a_live_owner()
+    {
+        var registry = new HandleRegistry<object>("session-a", 3);
+        var part = registry.Register(new object(), "Part");
+        registry.Release(part);
+
+        Assert.Throws<StaleObjectHandleException>(() =>
+            registry.Register(new object(), "Body", ownerObjectId: part.ObjectId));
+        Assert.Equal(0, registry.Count);
     }
 
     [Fact]
