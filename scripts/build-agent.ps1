@@ -18,15 +18,20 @@ $agentBin = Join-Path $repoRoot 'agent\bin'
 $hostProject = Join-Path $repoRoot 'agent\NXGO.Agent.NXHost\NXGO.Agent.NXHost.csproj'
 New-Item -ItemType Directory -Force -Path $agentBin | Out-Null
 
-Write-Host "Building canonical NXGO.Agent.Core + NXGO.Agent.NXHost against $env:NXGO_NX_MANAGED..."
+Write-Host "Building canonical NXGO.Protocol + NXGO.Agent.Core + NXGO.Agent.NXHost against $env:NXGO_NX_MANAGED..."
 & dotnet build $hostProject -c Release -p:NXGO_NX_MANAGED="$env:NXGO_NX_MANAGED" -o $agentBin --nologo
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+$protocolDll = Join-Path $agentBin 'NXGO.Protocol.dll'
 $coreDll = Join-Path $agentBin 'NXGO.Agent.Core.dll'
 $hostDll = Join-Path $agentBin 'NXGO.Agent.NXHost.dll'
+$jsonDll = Join-Path $agentBin 'Newtonsoft.Json.dll'
+if (!(Test-Path $protocolDll)) { throw "Canonical Protocol output missing: $protocolDll" }
 if (!(Test-Path $coreDll)) { throw "Canonical Agent Core output missing: $coreDll" }
 if (!(Test-Path $hostDll)) { throw "Canonical NXHost output missing: $hostDll" }
+if (!(Test-Path $jsonDll)) { throw "Canonical JSON runtime output missing: $jsonDll" }
 Write-Host "Canonical Agent built: $hostDll"
+Write-Host "Canonical wire runtime: $protocolDll + $jsonDll"
 
 # Transitional H4 parity path. The legacy monolithic journal remains the
 # default full-CAD worker until the compiled NXHost reaches operation parity
