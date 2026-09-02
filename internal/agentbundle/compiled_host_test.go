@@ -30,6 +30,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	root := repoRootForCompiledHostTest(t)
 	bootstrap := readRepoFile(t, root, "agent/bundle/CompiledHostBootstrap.cs")
 	host := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.cs")
+	geometry := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.Geometry.cs")
 	project := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/NXGO.Agent.NXHost.csproj")
 	build := readRepoFile(t, root, "scripts/build-agent.ps1")
 
@@ -67,9 +68,27 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"part.save",
 		"part.close",
 		"part.query_summary",
+		"feature.create_block",
+		"feature.create_cylinder",
+		"part.query_bodies",
+		"geometry.query_mass_properties",
+		"geometry.query_bounding_box",
+		"object.release",
 	} {
 		if !strings.Contains(host, marker) {
-			t.Errorf("canonical NXHost missing Core/v2/part marker %q", marker)
+			t.Errorf("canonical NXHost missing Core/v2/router marker %q", marker)
+		}
+	}
+	for _, marker := range []string{
+		"BuilderScope<NXOpen.Features.BlockFeatureBuilder>",
+		"BuilderScope<NXOpen.Features.CylinderBuilder>",
+		"GeometryUnitContract",
+		"ContractFor(body).NormalizeBoundingBox",
+		"Registry.Register(body, \"Body\", requestId)",
+		"StartObjectRelease",
+	} {
+		if !strings.Contains(geometry, marker) {
+			t.Errorf("canonical Geometry adapter missing Core/lifetime marker %q", marker)
 		}
 	}
 	for _, forbidden := range []string{
@@ -78,8 +97,17 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"private static string ExtractJsonString",
 		"IndexOf(\"\\\"request_id\\\"\")",
 	} {
-		if strings.Contains(host, forbidden) {
+		if strings.Contains(host, forbidden) || strings.Contains(geometry, forbidden) {
 			t.Errorf("canonical NXHost reintroduced duplicated/manual runtime primitive: %q", forbidden)
+		}
+	}
+	for _, forbidden := range []string{
+		"massProps[0] * 1000000.0",
+		"minMax[0] / 1000.0",
+		"int units = 3",
+	} {
+		if strings.Contains(geometry, forbidden) {
+			t.Errorf("canonical Geometry adapter reintroduced pre-hardening unit conversion: %q", forbidden)
 		}
 	}
 
