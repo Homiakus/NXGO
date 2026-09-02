@@ -35,10 +35,28 @@ public sealed class HandleRegistryCapacityException : InvalidOperationException
     public int Capacity { get; }
 }
 
+public sealed class HandleScopeCapacityException : InvalidOperationException
+{
+    public HandleScopeCapacityException(string scopeId, int capacity)
+        : base($"object handle scope {scopeId} reached its capacity ({capacity}); request must be rejected or paged")
+    {
+        ScopeId = scopeId;
+        Capacity = capacity;
+    }
+
+    public string ScopeId { get; }
+    public int Capacity { get; }
+}
+
 /// <summary>
 /// Thread-safe bounded registry used by NX-specific hosts to keep native object
 /// instances behind opaque session/epoch/generation handles. The registry has
 /// no Siemens dependency and is therefore covered by the canonical fast gate.
+///
+/// Handles may optionally belong to a lease scope and/or an owning handle.
+/// Scope budgets prevent one request from exhausting the worker-wide registry;
+/// ownership lets a host invalidate every Feature/Body/Component handle when
+/// its owning Part is closed, before stale native objects can be touched again.
 /// </summary>
 public sealed class HandleRegistry<T> where T : class
 {
@@ -47,6 +65,7 @@ public sealed class HandleRegistry<T> where T : class
         public int Slot { get; set; }
         public ObjectHandleToken Token { get; set; } = new ObjectHandleToken();
         public T Target { get; set; } = default!;
+        public string OwnerObjectId { get; set; } = string.Empty;
     }
 
     private readonly string _sessionId;
@@ -83,16 +102,47 @@ public sealed class HandleRegistry<T> where T : class
         get { lock (_sync) return _highWatermark; }
     }
 
-    public ObjectHandleToken Register(T target, string kind, string leaseScopeId = "")
+    public int CountScope(string leaseScopeId)
+    {
+        if (string.IsNullOrWhiteSpace(leaseScopeId)) return 0;
+        lock (_sync)
+        {
+            return _entries.Values.Count(e => string.Equals(e.Token.LeaseScopeId, leaseScopeId, StringComparison.Ordinal));
+        }
+    }
+
+    public ObjectHandleToken Register(
+        T target,
+        string kind,
+        string leaseScopeId = "",
+        string ownerObjectId = "",
+        int leaseScopeLimit = 0)
     {
         if (target == null) throw new ArgumentNullException(nameof(target));
         if (string.IsNullOrWhiteSpace(kind)) throw new ArgumentException("object kind is required", nameof(kind));
+        if (leaseScopeLimit < 0) throw new ArgumentOutOfRangeException(nameof(leaseScopeLimit));
+        if (leaseScopeLimit > 0 && string.IsNullOrWhiteSpace(leaseScopeId))
+        {
+            throw new ArgumentException("a non-empty lease scope is required when a scope limit is enforced", nameof(leaseScopeId));
+        }
 
         lock (_sync)
         {
             if (_entries.Count >= _capacity)
             {
                 throw new HandleRegistryCapacityException(_capacity);
+            }
+            if (!string.IsNullOrWhiteSpace(ownerObjectId) && !_entries.ContainsKey(ownerObjectId))
+            {
+                throw new StaleObjectHandleException("owner handle not found or expired: " + ownerObjectId);
+            }
+            if (leaseScopeLimit > 0)
+            {
+                var scopeCount = _entries.Values.Count(e => string.Equals(e.Token.LeaseScopeId, leaseScopeId, StringComparison.Ordinal));
+                if (scopeCount >= leaseScopeLimit)
+                {
+                    throw new HandleScopeCapacityException(leaseScopeId, leaseScopeLimit);
+                }
             }
 
             int slot;
@@ -130,7 +180,13 @@ public sealed class HandleRegistry<T> where T : class
                 Kind = kind,
                 LeaseScopeId = leaseScopeId ?? string.Empty,
             };
-            _entries.Add(objectId, new Entry { Slot = slot, Token = token, Target = target });
+            _entries.Add(objectId, new Entry
+            {
+                Slot = slot,
+                Token = token,
+                Target = target,
+                OwnerObjectId = ownerObjectId ?? string.Empty,
+            });
             if (_entries.Count > _highWatermark) _highWatermark = _entries.Count;
             return token;
         }
@@ -160,10 +216,42 @@ public sealed class HandleRegistry<T> where T : class
         lock (_sync)
         {
             ValidateIdentityLocked(token);
-            var entry = _entries[token.ObjectId];
-            if (!_entries.Remove(token.ObjectId)) return false;
-            _freeSlots.Enqueue(entry.Slot);
-            return true;
+            return RemoveEntryLocked(token.ObjectId);
+        }
+    }
+
+    /// <summary>
+    /// Invalidates every descendant owned directly or indirectly by owner, but
+    /// leaves the owner itself live. Useful when native child objects are
+    /// recreated while their owning Part remains open.
+    /// </summary>
+    public int ReleaseDependents(ObjectHandleToken owner)
+    {
+        if (owner == null) throw new StaleObjectHandleException("owner handle is null");
+        lock (_sync)
+        {
+            ValidateIdentityLocked(owner);
+            var ids = CollectDependentIdsLocked(owner.ObjectId);
+            foreach (var id in ids) RemoveEntryLocked(id);
+            return ids.Count;
+        }
+    }
+
+    /// <summary>
+    /// Atomically invalidates all descendants and the owner handle. A Part host
+    /// should call this after native close succeeds so no Feature/Body handle
+    /// can later resolve to an object owned by the closed Part.
+    /// </summary>
+    public int ReleaseWithDependents(ObjectHandleToken owner)
+    {
+        if (owner == null) throw new StaleObjectHandleException("owner handle is null");
+        lock (_sync)
+        {
+            ValidateIdentityLocked(owner);
+            var ids = CollectDependentIdsLocked(owner.ObjectId);
+            foreach (var id in ids) RemoveEntryLocked(id);
+            if (RemoveEntryLocked(owner.ObjectId)) return ids.Count + 1;
+            return ids.Count;
         }
     }
 
@@ -175,14 +263,44 @@ public sealed class HandleRegistry<T> where T : class
         {
             var doomed = _entries.Values
                 .Where(e => string.Equals(e.Token.LeaseScopeId, leaseScopeId, StringComparison.Ordinal))
+                .Select(e => e.Token.ObjectId)
                 .ToArray();
-            foreach (var entry in doomed)
-            {
-                _entries.Remove(entry.Token.ObjectId);
-                _freeSlots.Enqueue(entry.Slot);
-            }
+            foreach (var id in doomed) RemoveEntryLocked(id);
             return doomed.Length;
         }
+    }
+
+    private List<string> CollectDependentIdsLocked(string ownerObjectId)
+    {
+        var result = new List<string>();
+        var frontier = new Queue<string>();
+        frontier.Enqueue(ownerObjectId);
+        while (frontier.Count > 0)
+        {
+            var ownerId = frontier.Dequeue();
+            var children = _entries.Values
+                .Where(e => string.Equals(e.OwnerObjectId, ownerId, StringComparison.Ordinal))
+                .Select(e => e.Token.ObjectId)
+                .ToArray();
+            foreach (var childId in children)
+            {
+                result.Add(childId);
+                frontier.Enqueue(childId);
+            }
+        }
+        // Children appear before no required ordering contract, but releasing
+        // deepest descendants first makes ownership debugging less surprising.
+        result.Reverse();
+        return result;
+    }
+
+    private bool RemoveEntryLocked(string objectId)
+    {
+        Entry entry;
+        if (!_entries.TryGetValue(objectId, out entry)) return false;
+        _entries.Remove(objectId);
+        _freeSlots.Enqueue(entry.Slot);
+        return true;
     }
 
     private void ValidateIdentityLocked(ObjectHandleToken token)
