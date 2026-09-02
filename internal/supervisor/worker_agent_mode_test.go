@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+var canonicalRuntimeDLLs = []string{
+	"Newtonsoft.Json.dll",
+	"NXGO.Protocol.dll",
+	"NXGO.Agent.Core.dll",
+	"NXGO.Agent.NXHost.dll",
+}
+
 func TestResolveWorkerAgentPathsDefaultsToLegacy(t *testing.T) {
 	root := createAgentLayout(t, true)
 	journal, agentBin, err := resolveWorkerAgentPaths(WorkerConfig{}, root)
@@ -45,6 +52,21 @@ func TestResolveWorkerAgentPathsCanonicalFailsClosedWhenDllMissing(t *testing.T)
 	_, _, err := resolveWorkerAgentPaths(WorkerConfig{AgentMode: AgentModeCanonical}, root)
 	if err == nil {
 		t.Fatal("canonical mode unexpectedly accepted missing compiled Agent DLLs")
+	}
+}
+
+func TestResolveWorkerAgentPathsCanonicalRejectsEachMissingRuntimeDependency(t *testing.T) {
+	for _, missing := range canonicalRuntimeDLLs {
+		t.Run(missing, func(t *testing.T) {
+			root := createAgentLayout(t, true)
+			if err := os.Remove(filepath.Join(root, "agent", "bin", missing)); err != nil {
+				t.Fatal(err)
+			}
+			_, _, err := resolveWorkerAgentPaths(WorkerConfig{AgentMode: AgentModeCanonical}, root)
+			if err == nil {
+				t.Fatalf("canonical mode unexpectedly accepted missing runtime dependency %s", missing)
+			}
+		})
 	}
 }
 
@@ -102,7 +124,7 @@ func createAgentLayout(t *testing.T, withDLLs bool) string {
 		}
 	}
 	if withDLLs {
-		for _, dll := range []string{"NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll"} {
+		for _, dll := range canonicalRuntimeDLLs {
 			if err := os.WriteFile(filepath.Join(bin, dll), []byte("fixture"), 0o644); err != nil {
 				t.Fatal(err)
 			}
