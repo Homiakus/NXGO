@@ -176,8 +176,6 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if len(bodies) != 2 {
 		t.Fatalf("canonical geometry expected 2 bodies after block+cylinder, got %d", len(bodies))
 	}
-	bodyRefs := make([]interface{ ObjectIDString() string }, 0)
-	_ = bodyRefs // body handles are released by the SDK aggregation path; direct query handles are released explicitly below.
 	for i, body := range bodies {
 		if body.Ref.Generation == 0 || body.FaceCount == 0 || body.EdgeCount == 0 {
 			t.Fatalf("canonical body %d is incomplete: %+v", i, body)
