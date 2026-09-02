@@ -72,3 +72,25 @@ func TestProductionAgentStrictHandleIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestProductionAgentMutationJournalContract(t *testing.T) {
+	src := loadAgentWorker(t)
+	required := []string{
+		"public sealed class MutationJournal",
+		"new MutationJournal(4096)",
+		"SHA256.Create()",
+		"ReturnCommitted",
+		"Journal.MarkStarted(reqId)",
+		"Journal.MarkCommitted(reqId, executionResult)",
+		"Journal.MarkFailedBeforeStart",
+		"Journal.MarkOutcomeUnknown",
+		"previous execution outcome is unknown; request must not be replayed",
+		"CANCELLED_BEFORE_START",
+		"request_id reused with different operation or payload",
+	}
+	for _, marker := range required {
+		if !strings.Contains(src, marker) {
+			t.Errorf("production mutation-journal marker missing: %q", marker)
+		}
+	}
+}
