@@ -1,0 +1,9 @@
+{
+  "protocol_version": {"major": 2, "minor": 0},
+  "sdk_version": "v0.crosslang-test",
+  "requested_mode": "dedicated-worker",
+  "requested_features": ["geometry", "assembly", "drafting"],
+  "client_pid": 4242,
+  "client_user": "инженер-日本語",
+  "nonce": "nonce-crosslang-001"
+}
