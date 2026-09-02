@@ -1,0 +1,91 @@
+name: apply-nxhost-temporal-assembly
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/nxhost_temporal_assembly.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Apply temporal handle and Assembly wiring
+        run: python3 tools/apply_nxhost_temporal_assembly_wiring.py
+      - name: Verify temporal and ownership invariants
+        run: |
+          grep -Fq 'ResolveOwned(ObjectHandleToken token, ObjectHandleToken owner' agent/NXGO.Agent.Core/HandleRegistry.cs
+          grep -Fq 'registry.ResolveOwned(component, ownerA, "Component")' agent/NXGO.Agent.Core.Tests/HandleRegistryTests.cs
+          grep -Fq 'Registry.ResolveOwned(componentHandle, partHandle, "Component")' agent/NXGO.Agent.NXHost/EntryPoint.Assembly.cs
+          ! grep -Fq 'component.OwningPart' agent/NXGO.Agent.NXHost/EntryPoint.Assembly.cs
+          grep -Fq 'case "assembly.add_component":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "assembly.query_tree":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "assembly.query_bom":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          grep -Fq 'case "assembly.remove_component":' agent/NXGO.Agent.NXHost/EntryPoint.cs
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def method_body(text, signature):
+              start = text.index(signature)
+              end = text.find('\n    private static ', start + 1)
+              return text[start:] if end == -1 else text[start:end]
+
+          host = Path('agent/NXGO.Agent.NXHost/EntryPoint.cs').read_text(encoding='utf-8')
+          geo = Path('agent/NXGO.Agent.NXHost/EntryPoint.Geometry.cs').read_text(encoding='utf-8')
+          assy = Path('agent/NXGO.Agent.NXHost/EntryPoint.Assembly.cs').read_text(encoding='utf-8')
+
+          for name in ('StartPartSave', 'StartPartClose'):
+              body = method_body(host, 'private static Task<byte[]> ' + name)
+              if body.index('Registry.Resolve(') > body.index('Journal.MarkStarted(requestId);'):
+                  raise SystemExit(name + ': handle must resolve before MarkStarted')
+              if body.index('Registry.Resolve(') < body.index('executor.EnqueueTracked'):
+                  raise SystemExit(name + ': handle must be revalidated inside queued execution')
+          summary = method_body(host, 'private static Task<byte[]> StartPartSummary')
+          if summary.index('Registry.Resolve(') < summary.index('executor.EnqueueTracked'):
+              raise SystemExit('StartPartSummary: handle must be resolved in NX execution')
+
+          for name in ('StartCreateBlock', 'StartCreateCylinder'):
+              body = method_body(geo, 'private static Task<byte[]> ' + name)
+              if body.index('Registry.Resolve(') > body.index('Journal.MarkStarted(requestId);'):
+                  raise SystemExit(name + ': handle must resolve before MarkStarted')
+              if body.index('Registry.Resolve(') < body.index('executor.EnqueueTracked'):
+                  raise SystemExit(name + ': handle must be revalidated inside queued execution')
+          for name in ('StartQueryBodies', 'StartMassProperties', 'StartBoundingBox'):
+              body = method_body(geo, 'private static Task<byte[]> ' + name)
+              if body.index('Registry.Resolve(') < body.index('executor.EnqueueTracked'):
+                  raise SystemExit(name + ': handle must be resolved in NX execution')
+
+          remove = method_body(assy, 'private static Task<byte[]> StartAssemblyRemoveComponent')
+          if remove.index('Registry.ResolveOwned(') > remove.index('Journal.MarkStarted(requestId);'):
+              raise SystemExit('assembly.remove_component ownership must validate before MarkStarted')
+          if remove.index('Registry.ResolveOwned(') < remove.index('executor.EnqueueTracked'):
+              raise SystemExit('assembly.remove_component ownership must validate at execution time')
+          PY
+      - name: Canonical fast loop
+        run: go run ./cmd/nxctl test fast
+      - name: Commit temporal and Assembly hardening
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            agent/NXGO.Agent.Core/HandleRegistry.cs \
+            agent/NXGO.Agent.Core.Tests/HandleRegistryTests.cs \
+            agent/NXGO.Agent.NXHost/EntryPoint.cs \
+            agent/NXGO.Agent.NXHost/EntryPoint.Assembly.cs
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat(nxhost): harden temporal handles and wire assembly adapter'
+          git push origin HEAD:main
