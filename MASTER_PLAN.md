@@ -197,6 +197,99 @@ Small additions are allowed only when required to construct a hardening fixture 
 
 # 4. Hardening program
 
+<!-- HARDENING_STATUS_BEGIN -->
+## Current hardening execution status — 2026-09-02
+
+Evidence policy for this status block:
+
+- **E2 / no-NX confirmed** means the canonical fast gate is reproducibly green and the stated invariant has deterministic automated coverage.
+- **E3 / real-NX pending** means the production code path exists but Siemens NX semantic evidence has not yet been retained from the self-hosted Windows/NX runner.
+- A phase is **not closed** merely because its no-NX subset is complete.
+
+### H1 — protocol sequencing / cancellation — **E2 substantially complete, E3 pending**
+
+Confirmed in `main`:
+
+- one connection-owned Go receive loop with exact RequestID routing;
+- bounded pending RPC set and duplicate in-flight RequestID rejection;
+- unknown/duplicate response IDs and malformed frames are protocol-fatal;
+- timeout/cancellation after send returns `ErrOutcomeUnknown`, quarantines the connection, and supervisor termination makes the NX worker disposable;
+- production executor distinguishes queued, started, completed and cancelled-before-start work; a pre-start timeout cannot execute later;
+- production execution-started timeout becomes `OUTCOME_UNKNOWN` and marks the session lost;
+- 1,000 deterministic cancel-after-send/late-response cycles prove request B never receives or follows request A on the quarantined stream;
+- explicit duplicate-response regression coverage is green.
+
+Still required before H1 exit:
+
+- real-NX blocked-queue cancellation fixture with before/after CAD state;
+- real-NX timeout-after-start fixture;
+- Agent/NX termination after mutation commit but before response delivery;
+- retained long-cycle leak/resource evidence on the production Windows worker.
+
+### H2 — mutation idempotency / outcome journal — **E2 partial, E3 pending**
+
+Confirmed in `main`:
+
+- bounded Agent.Core request journal and production runtime mutation journal;
+- RequestID + operation + SHA-256 payload identity;
+- same RequestID with different payload/operation fails closed;
+- committed same-worker replay returns the cached response without repeating NX execution;
+- duplicate in-flight request is rejected deterministically;
+- cancelled-before-start result is cacheable and replayable as non-executed;
+- started operation with unprovable result becomes `OUTCOME_UNKNOWN` and cannot be automatically replayed;
+- journal quota is fail-closed.
+
+Still required before H2 exit:
+
+- durable journal state across Agent/NX process loss;
+- explicit persistence/fsync/recovery policy and crash-transition tests;
+- shared Fake-Agent / production-Agent conformance suite;
+- real-NX committed-mutation/lost-response replay proving feature count remains one.
+
+### H3 — ObjectRef / registry lifetime — **E2 substantially complete, E3 pending**
+
+Confirmed in `main`:
+
+- protocol v2 makes `Generation` mandatory in `ObjectHandleWire`;
+- SDK validates SessionID, Epoch, ObjectID, Generation and expected Kind before IPC;
+- production Agent validates the same identity and rejects missing/wrong/stale generation;
+- implicit invalid-handle fallback to work/display part or first body is removed;
+- released/unknown handle resolution fails closed;
+- production registry is bounded to 4,096 live handles and records a high-watermark;
+- protocol v1 peers are rejected at version negotiation rather than failing later during CAD execution.
+
+Still required before H3 exit:
+
+- explicit lease-scope lifecycle and scope release;
+- dependent-handle invalidation on part/component close;
+- per-request produced-handle quota in addition to the worker-wide bound;
+- registry diagnostics surfaced through session/doctor telemetry;
+- real-NX invalid-reference fixtures proving zero unintended CAD mutation.
+
+### H4 — Agent Core consolidation — **OPEN**
+
+Production `agent/bundle/AgentWorker.cs` is safer but still duplicates protocol, executor, registry, journal and JSON handling instead of consuming one canonical tested Agent Core implementation. H4 remains the next architectural priority; do not treat duplicated production logic as convergence.
+
+### H5/H6 semantic fixes already landed — **E2 confirmed, E3 pending**
+
+- metric mass-property normalization now uses the explicit kg/m UF contract and converts once to mm/mm²/mm³/kg;
+- UF bounding boxes remain in owning-part length units without the previous `/1000` corruption;
+- part-level mass properties and bounding boxes aggregate all bodies instead of silently choosing the first body;
+- `part.close(save=true)` no longer swallows save failures;
+- unsupported Boolean/TargetBody feature options are rejected instead of being accepted and ignored.
+
+Required evidence remains real-NX metric/imperial oracle fixtures, multi-body fixtures, save-failure fixtures and retained artifacts.
+
+### Immediate next execution order
+
+1. H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer and reduce `AgentWorker.cs` to an NX adapter/bootstrap.
+2. H2: add durable mutation journal recovery so process death after commit cannot permit blind replay.
+3. H3: implement lease scopes, dependent invalidation, per-request handle budgets and registry telemetry.
+4. Run the self-hosted `real-nx-quality-gate` on pinned NX 2512 and retain semantic artifacts for H1/H2/H3/H5/H6.
+5. Only after those gates, reconsider the hardening freeze on broader NX API surface.
+<!-- HARDENING_STATUS_END -->
+
+
 # H0 — Baseline, reproducibility, and audit-lock
 
 Priority: **P0**  
