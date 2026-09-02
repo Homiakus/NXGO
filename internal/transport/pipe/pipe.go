@@ -156,20 +156,41 @@ type Client struct {
 	writeMu     sync.Mutex
 	stateMu     sync.Mutex
 
-	sessionID    string
-	epoch        uint64
-	serverInfo   *protocol.HandshakeResponse
-	pending      map[string]chan callResult
-	readerStarted bool
-	closed       bool
-	quarantined  bool
-	terminalErr  error
+	sessionID      string
+	epoch          uint64
+	serverInfo     *protocol.HandshakeResponse
+	pending        map[string]chan callResult
+	readerStarted  bool
+	closed         bool
+	quarantined    bool
+	terminalErr    error
+	quarantineHook func(error)
 }
 
 func NewClient(rwc io.ReadWriteCloser) *Client {
 	return &Client{
 		conn:    NewFramedConn(rwc, protocol.DefaultMaxPayloadBytes),
 		pending: make(map[string]chan callResult),
+	}
+}
+
+// SetQuarantineHook installs a lifecycle callback that is invoked exactly once
+// when this connection becomes unsafe to reuse. The hook is intentionally
+// asynchronous: supervisors commonly terminate an owning worker process from
+// the callback, and doing that inline could deadlock a caller already holding
+// worker lifecycle locks.
+//
+// If the client is already quarantined when the hook is installed, the hook is
+// invoked immediately (asynchronously) with the terminal cause.
+func (c *Client) SetQuarantineHook(hook func(error)) {
+	c.stateMu.Lock()
+	c.quarantineHook = hook
+	quarantined := c.quarantined
+	cause := c.terminalErrorLocked()
+	c.stateMu.Unlock()
+
+	if hook != nil && quarantined {
+		go hook(cause)
 	}
 }
 
@@ -289,7 +310,7 @@ func (c *Client) Call(ctx context.Context, req *protocol.RequestEnvelope) (*prot
 
 	select {
 	case <-ctx.Done():
-		terminal := fmt.Errorf("%w: request %s interrupted after send: %v", ErrOutcomeUnknown, req.RequestID, ctx.Err())
+		terminal := fmt.Errorf("%w: request %s interrupted after send: %w", ErrOutcomeUnknown, req.RequestID, ctx.Err())
 		c.quarantine(terminal)
 		return nil, terminal
 	case result := <-resultCh:
@@ -390,6 +411,7 @@ func (c *Client) quarantine(cause error) {
 	c.terminalErr = cause
 	pending := c.pending
 	c.pending = make(map[string]chan callResult)
+	hook := c.quarantineHook
 	c.stateMu.Unlock()
 
 	_ = c.conn.Close()
@@ -398,6 +420,9 @@ func (c *Client) quarantine(cause error) {
 		case ch <- callResult{err: cause}:
 		default:
 		}
+	}
+	if hook != nil {
+		go hook(cause)
 	}
 }
 
