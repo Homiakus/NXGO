@@ -21,21 +21,34 @@ var (
 	ErrWorkerDied         = errors.New("NX worker process exited prematurely")
 )
 
+type AgentMode string
+
+const (
+	// AgentModeLegacy keeps the current production default until the compiled
+	// Core->NXHost path has retained E3 evidence on the pinned real-NX runner.
+	AgentModeLegacy AgentMode = "legacy"
+	// AgentModeCanonical launches the minimal run_journal bootstrap that loads
+	// NXGO.Agent.Core.dll + NXGO.Agent.NXHost.dll from AgentBin.
+	AgentModeCanonical AgentMode = "canonical"
+)
+
 type WorkerConfig struct {
 	NXHome         string
 	PipeName       string
 	ArtifactDir    string
 	JournalPath    string
+	AgentMode      AgentMode
+	AgentBin       string
 	StartupTimeout time.Duration
 }
 
 type WorkerProcess struct {
-	Config   WorkerConfig
-	Manifest *WorkerManifest
-	Client   *pipe.Client
-	cmd      *exec.Cmd
-	mu       sync.Mutex
-	stopped  bool
+	Config        WorkerConfig
+	Manifest      *WorkerManifest
+	Client        *pipe.Client
+	cmd           *exec.Cmd
+	mu            sync.Mutex
+	stopped       bool
 	quarantineErr error
 }
 
@@ -63,10 +76,13 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	if cfg.StartupTimeout <= 0 {
 		cfg.StartupTimeout = 30 * time.Second
 	}
-	if cfg.JournalPath == "" {
-		repoRoot := findRepoRoot()
-		cfg.JournalPath = filepath.Join(repoRoot, "agent", "bundle", "AgentWorker.cs")
+
+	journalPath, agentBin, err := resolveWorkerAgentPaths(cfg, findRepoRoot())
+	if err != nil {
+		return nil, err
 	}
+	cfg.JournalPath = journalPath
+	cfg.AgentBin = agentBin
 
 	absJournal, err := filepath.Abs(cfg.JournalPath)
 	if err != nil {
@@ -78,6 +94,9 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		fmt.Sprintf("NXGO_PIPE_NAME=%s", cfg.PipeName),
 		fmt.Sprintf("UGII_BASE_DIR=%s", inst.Home),
 	)
+	if cfg.AgentBin != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("NXGO_AGENT_BIN=%s", cfg.AgentBin))
+	}
 
 	var outBuf bytes.Buffer
 	cmd.Stdout = &outBuf
@@ -137,6 +156,59 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	}
 
 	return wp, nil
+}
+
+// resolveWorkerAgentPaths is intentionally NX-independent so the launch-mode
+// contract is covered by ordinary CI. Explicit JournalPath remains an escape
+// hatch for test fixtures/custom journals, but it cannot be combined with an
+// AgentMode because that would make the selected runtime ambiguous.
+func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath string, agentBin string, err error) {
+	if cfg.JournalPath != "" {
+		if cfg.AgentMode != "" {
+			return "", "", errors.New("worker config cannot set both JournalPath and AgentMode")
+		}
+		return cfg.JournalPath, cfg.AgentBin, nil
+	}
+
+	mode := cfg.AgentMode
+	if mode == "" {
+		mode = AgentModeLegacy
+	}
+
+	switch mode {
+	case AgentModeLegacy:
+		journalPath = filepath.Join(repoRoot, "agent", "bundle", "AgentWorker.cs")
+		if _, statErr := os.Stat(journalPath); statErr != nil {
+			return "", "", fmt.Errorf("legacy NX Agent journal unavailable: %w", statErr)
+		}
+		return journalPath, "", nil
+
+	case AgentModeCanonical:
+		journalPath = filepath.Join(repoRoot, "agent", "bundle", "CompiledHostBootstrap.cs")
+		if _, statErr := os.Stat(journalPath); statErr != nil {
+			return "", "", fmt.Errorf("canonical NX Agent bootstrap unavailable: %w", statErr)
+		}
+
+		agentBin = cfg.AgentBin
+		if agentBin == "" {
+			agentBin = filepath.Join(repoRoot, "agent", "bin")
+		}
+		absBin, absErr := filepath.Abs(agentBin)
+		if absErr != nil {
+			return "", "", fmt.Errorf("resolve canonical AgentBin: %w", absErr)
+		}
+		agentBin = absBin
+		for _, dll := range []string{"NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll"} {
+			path := filepath.Join(agentBin, dll)
+			if _, statErr := os.Stat(path); statErr != nil {
+				return "", "", fmt.Errorf("canonical NX Agent artifact unavailable %s: %w", path, statErr)
+			}
+		}
+		return journalPath, agentBin, nil
+
+	default:
+		return "", "", fmt.Errorf("unsupported NX Agent mode %q", mode)
+	}
 }
 
 func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, cmd *exec.Cmd, outBuf *bytes.Buffer) (*pipe.Client, error) {
