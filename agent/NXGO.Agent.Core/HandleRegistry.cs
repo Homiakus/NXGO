@@ -48,6 +48,13 @@ public sealed class HandleScopeCapacityException : InvalidOperationException
     public int Capacity { get; }
 }
 
+public sealed class HandleRegistryDiagnostics
+{
+    public int Count { get; set; }
+    public int Capacity { get; set; }
+    public int HighWatermark { get; set; }
+}
+
 /// <summary>
 /// Thread-safe bounded registry used by NX-specific hosts to keep native object
 /// instances behind opaque session/epoch/generation handles. The registry has
@@ -100,6 +107,19 @@ public sealed class HandleRegistry<T> where T : class
     public int HighWatermark
     {
         get { lock (_sync) return _highWatermark; }
+    }
+
+    public HandleRegistryDiagnostics GetDiagnostics()
+    {
+        lock (_sync)
+        {
+            return new HandleRegistryDiagnostics
+            {
+                Count = _entries.Count,
+                Capacity = _capacity,
+                HighWatermark = _highWatermark,
+            };
+        }
     }
 
     public int CountScope(string leaseScopeId)

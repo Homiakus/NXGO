@@ -192,6 +192,19 @@ public sealed class HandleRegistryTests
         Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(forged));
     }
 
+    [Fact]
+    public void Diagnostics_are_a_consistent_snapshot()
+    {
+        var registry = new HandleRegistry<object>("session-a", 1, capacity: 3);
+        registry.Register(new object(), "Body");
+
+        var diagnostics = registry.GetDiagnostics();
+
+        Assert.Equal(1, diagnostics.Count);
+        Assert.Equal(3, diagnostics.Capacity);
+        Assert.Equal(1, diagnostics.HighWatermark);
+    }
+
     private static ObjectHandleToken Clone(ObjectHandleToken token)
     {
         return new ObjectHandleToken
