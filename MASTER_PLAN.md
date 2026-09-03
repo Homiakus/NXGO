@@ -348,27 +348,27 @@ validate frame/envelope
 
 ## Go transport tasks
 
-- [ ] replace per-call read goroutines with one connection-owned receive loop;
-- [ ] maintain a bounded `pending map[RequestID]callState`;
-- [ ] reject duplicate in-flight RequestIDs;
-- [ ] require exact `ResponseEnvelope.RequestID` correlation;
-- [ ] treat unknown/duplicate response IDs as protocol violation;
-- [ ] on framing/decode/correlation violation close the connection and mark session lost/ambiguous;
-- [ ] make request ID generation collision-resistant and testable;
-- [ ] distinguish caller cancellation from server-confirmed cancellation;
-- [ ] expose structured `ErrOutcomeUnknown` / `ErrSessionLost` rather than generic timeout for ambiguous mutation state;
-- [ ] ensure `Close` unblocks reader/writers and completes all pending calls exactly once;
-- [ ] bound pending-call count and payload memory.
+- [x] replace per-call read goroutines with one connection-owned receive loop;
+- [x] maintain a bounded `pending map[RequestID]callState`;
+- [x] reject duplicate in-flight RequestIDs;
+- [x] require exact `ResponseEnvelope.RequestID` correlation;
+- [x] treat unknown/duplicate response IDs as protocol violation;
+- [x] on framing/decode/correlation violation close the connection and mark session lost/ambiguous;
+- [x] make request ID generation collision-resistant and testable;
+- [x] distinguish caller cancellation from server-confirmed cancellation;
+- [x] expose structured `ErrOutcomeUnknown` / `ErrSessionLost` rather than generic timeout for ambiguous mutation state;
+- [x] ensure `Close` unblocks reader/writers and completes all pending calls exactly once;
+- [x] bound pending-call count and payload memory.
 
 ## Agent executor tasks
 
-- [ ] queue items carry explicit states: queued / started / committed / completed / cancelled-before-start;
-- [ ] cancellation before NX execution removes/skips the item deterministically;
-- [ ] once NX execution starts, client cancellation must not imply rollback or non-execution;
-- [ ] return an explicit final outcome whenever the connection remains healthy;
-- [ ] if outcome cannot be proven after transport loss, quarantine the worker/session;
-- [ ] define cancellation semantics separately for read-only and mutating operations;
-- [ ] remove timeout behavior that allows an operation to execute later while caller assumes it did not.
+- [x] queue items carry explicit states: queued / started / committed / completed / cancelled-before-start;
+- [x] cancellation before NX execution removes/skips the item deterministically;
+- [x] once NX execution starts, client cancellation must not imply rollback or non-execution;
+- [x] return an explicit final outcome whenever the connection remains healthy;
+- [x] if outcome cannot be proven after transport loss, quarantine the worker/session;
+- [x] define cancellation semantics separately for read-only and mutating operations;
+- [x] remove timeout behavior that allows an operation to execute later while caller assumes it did not.
 
 ## Required tests
 
