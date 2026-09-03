@@ -424,24 +424,24 @@ CompletedAt
 
 ## Tasks
 
-- [ ] move idempotency behavior from Fake-Agent-only semantics into production Agent Core;
-- [ ] reject reuse of RequestID with different operation/payload hash;
-- [ ] return cached committed result for safe replay within the same compatible session epoch;
+- [x] move idempotency behavior from Fake-Agent-only semantics into production Agent Core;
+- [x] reject reuse of RequestID with different operation/payload hash;
+- [x] return cached committed result for safe replay within the same compatible session epoch;
 - [ ] define which read-only operations may bypass journal persistence;
 - [x] define journal retention and memory/disk bounds;
-- [ ] persist enough state for supervisor recovery policy where process loss occurs;
-- [ ] classify operations by replay policy;
-- [ ] prevent automatic retry of non-idempotent operations without proven outcome;
-- [ ] integrate correlation IDs and transaction IDs into journal entries;
-- [ ] emit diagnostic evidence for ambiguous transport loss.
+- [x] persist enough state for supervisor recovery policy where process loss occurs;
+- [x] classify operations by replay policy;
+- [x] prevent automatic retry of non-idempotent operations without proven outcome;
+- [x] integrate correlation IDs and transaction IDs into journal entries;
+- [x] emit diagnostic evidence for ambiguous transport loss.
 
 ## Tests
 
 - [ ] committed mutation + lost response + same RequestID => mutation count remains one;
-- [ ] same RequestID + different payload => hard protocol error;
-- [ ] duplicate request while original is executing => deterministic dedup/wait/reject policy;
-- [ ] rollback result replay;
-- [ ] journal quota behavior;
+- [x] same RequestID + different payload => hard protocol error;
+- [x] duplicate request while original is executing => deterministic dedup/wait/reject policy;
+- [x] rollback result replay;
+- [x] journal quota behavior;
 - [ ] process crash during each state transition;
 - [ ] real-NX feature creation replay does not create duplicate features.
 
