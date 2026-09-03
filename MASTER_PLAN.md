@@ -716,6 +716,12 @@ Target evidence: `E4 → E5`
 
 ## H6.2 Named-pipe security
 
+Implementation note: the attempted `System.IO.Pipes.AccessControl` path is not
+currently reproducible from the configured NuGet feed; stable 8.x is absent
+and only a preview 6.x package is discoverable. Do not mark the ACL gate green
+or introduce a preview dependency until a supported Windows-specific package
+source/API is available.
+
 - [ ] explicit Windows DACL scoped to intended user/service identity;
 - [ ] validate pipe ownership/peer expectations where practical;
 - [x] supervisor generates high-entropy worker secret/nonce;
