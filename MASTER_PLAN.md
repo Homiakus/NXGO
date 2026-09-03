@@ -721,7 +721,7 @@ Target evidence: `E4 → E5`
 - [x] operation allowlist remains default;
 - [ ] hardened mode disables journal/reflection/raw execution escape hatches;
 - [ ] unauthorized local client test;
-- [ ] malformed/flooding client test;
+- [x] malformed/flooding client test;
 - [x] payload and pending-request quotas.
 
 ## H6.3 Reliability campaign
