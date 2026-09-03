@@ -170,6 +170,12 @@ either make the runner terminate reliably after journal failure or add a
 bounded failure signal that does not mistake a live but unresponsive runner
 for a successful startup.
 
+Local remediation is implemented in `internal/supervisor/startup_failure.go`:
+the startup loop fails fast on the stable `Runtime error:` journal marker while
+retaining the normal timeout for silent/unresponsive startup. Real-NX
+reverification remains pending because A-016 still prevents a successful
+canonical Agent launch.
+
 ---
 
 # 3. Immediate development policy — HARDENING FREEZE
