@@ -596,7 +596,7 @@ Recommended initial contract:
 - [x] normalize `BoundingBox`, centroid, area, volume and mass consistently;
 - [x] implement `Part.MassProperties` over all applicable bodies;
 - [x] expose body-level and part-level mass properties as separate semantics;
-- [ ] define behavior for sheet bodies/non-solid bodies/mixed parts;
+- [x] define behavior for sheet bodies/non-solid bodies/mixed parts;
 - [x] add density/material semantics instead of silently assuming a misleading mass value.
 
 ## H5.2 Feature parameter honesty

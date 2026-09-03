@@ -31,3 +31,10 @@ The NX2512 installed managed metadata was inspected for `NXOpen.UF.UFModl`:
 The adapter passes the body tag, one body, solid type, the contract's UF mass
 units, unit scale `1.0`, accuracy mode, and the three NX output arrays in that
 order.
+
+Body mass-properties queries support both solid and sheet bodies and return
+`solid_type` as `solid` or `sheet`; the result is the value reported by NX for
+that body. Part-level aggregation queries every body rather than selecting
+one: an empty part returns `solid_type: empty`, while a mixed or multi-body
+part returns `solid_type: aggregate` with all returned body values summed and
+the centroid weighted by mass, or by volume when mass is zero.
