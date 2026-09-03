@@ -177,6 +177,21 @@ public sealed class RequestJournalTests
     }
 
     [Fact]
+    public void Snapshot_rejects_terminal_record_without_result()
+    {
+        var journal = new RequestJournal();
+        journal.Admit("req-1", "part.save", Array.Empty<byte>());
+        journal.MarkStarted("req-1");
+        journal.MarkCommitted("req-1", Array.Empty<byte>());
+        using var snapshot = new MemoryStream();
+        journal.SaveSnapshot(snapshot);
+        var bytes = snapshot.ToArray();
+        // The result-length field is the final four bytes for an empty result.
+        for (var i = bytes.Length - 4; i < bytes.Length; i++) bytes[i] = 0xff;
+        Assert.Throws<InvalidDataException>(() => RequestJournal.LoadSnapshot(new MemoryStream(bytes)));
+    }
+
+    [Fact]
     public void Atomic_store_replaces_snapshot_and_loads_it()
     {
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nxgo-journal-" + Guid.NewGuid().ToString("N"), "journal.bin");

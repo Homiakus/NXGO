@@ -308,6 +308,12 @@ public sealed class RequestJournal
             if (resultLength >= 0 && result!.Length != resultLength) throw new EndOfStreamException("truncated journal result");
             if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(operation) || payloadHash.Length != 64 || !Enum.IsDefined(typeof(RequestJournalState), state))
                 throw new InvalidDataException("invalid request journal record");
+            if ((state == RequestJournalState.Committed || state == RequestJournalState.RolledBack) && result == null)
+                throw new InvalidDataException("terminal journal record is missing result envelope");
+            if ((state == RequestJournalState.Failed || state == RequestJournalState.OutcomeUnknown) && string.IsNullOrEmpty(failure))
+                throw new InvalidDataException("failed journal record is missing diagnostic");
+            if ((state == RequestJournalState.Received || state == RequestJournalState.Started) && result != null)
+                throw new InvalidDataException("non-terminal journal record contains a result envelope");
             if (journal._records.ContainsKey(requestId)) throw new InvalidDataException("duplicate request journal id");
             var restoredState = state == RequestJournalState.Started ? RequestJournalState.OutcomeUnknown : state;
             var restoredFailure = string.IsNullOrEmpty(failure) ? null : failure;
