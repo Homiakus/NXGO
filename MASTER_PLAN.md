@@ -541,8 +541,8 @@ The runtime loaded/executed by real NX must consume the same Core primitives exe
 - [x] introduce strongly typed request/response envelope DTOs;
 - [x] use a real JSON serializer compatible with supported NX/.NET runtime;
 - [x] make operation admission and handshake capabilities derive from one explicit canonical registry;
-- [ ] keep NX-specific adapters thin and release-aware;
-- [ ] keep bootstrap/journal entry point minimal;
+- [x] keep NX-specific adapters thin and release-aware;
+- [x] keep bootstrap/journal entry point minimal;
 - [x] make the production build fail if it bypasses canonical Core packages;
 - [x] add cross-language golden protocol tests using production serializer;
 - [x] add malformed/escaped/unicode payload corpus.
