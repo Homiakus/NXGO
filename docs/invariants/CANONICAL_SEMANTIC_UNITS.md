@@ -20,3 +20,8 @@ are not unitless.
 that default. New public geometry operations must name their unit behavior in
 the request/response contract and must not silently mix part units with UF
 internal units. Conversion to NX/UF units belongs in the NX adapter boundary.
+
+Mass is the value reported by the NX mass-properties query; NXGO does not
+derive or assume a material density. Density/material metadata is currently
+unavailable in the public contract and must be added explicitly before any
+mass conversion or material claim is exposed.
