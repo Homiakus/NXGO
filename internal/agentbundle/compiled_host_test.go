@@ -128,6 +128,8 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"assembly.query_bom",
 		"assembly.remove_component",
 		"PreStartErrorCategory",
+		"part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);",
+		"part.Close(BasePart.CloseWholeTree.False, BasePart.CloseModified.CloseModified, null!);",
 	} {
 		if !strings.Contains(host, marker) {
 			t.Errorf("canonical NXHost missing Core/v2/router marker %q", marker)
@@ -196,6 +198,10 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	}
 	if strings.Contains(assembly, "component.OwningPart") {
 		t.Fatal("Assembly adapter must not validate ownership by touching NXOpen objects on the transport thread")
+	}
+	closeBody := csharpMethodBody(t, host, "StartPartClose")
+	if savePos, closePos := strings.Index(closeBody, "part.Save("), strings.Index(closeBody, "part.Close("); savePos < 0 || closePos < 0 || savePos > closePos {
+		t.Fatal("part.close with save must save before closing and must not suppress save failures")
 	}
 	if !strings.Contains(registry, "ResolveOwned(ObjectHandleToken token, ObjectHandleToken owner") {
 		t.Fatal("Core registry must expose ownership validation for cross-object operations")
