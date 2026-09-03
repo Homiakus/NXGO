@@ -364,5 +364,9 @@ public sealed class HandleRegistry<T> where T : class
         {
             throw new StaleObjectHandleException($"object kind mismatch for {token.ObjectId}: got {token.Kind}, registered {entry.Token.Kind}");
         }
+        if (!string.Equals(token.LeaseScopeId ?? string.Empty, entry.Token.LeaseScopeId ?? string.Empty, StringComparison.Ordinal))
+        {
+            throw new StaleObjectHandleException($"object lease scope mismatch for {token.ObjectId}");
+        }
     }
 }

@@ -178,6 +178,20 @@ public sealed class HandleRegistryTests
         Assert.NotNull(registry.Resolve(live, "Body"));
     }
 
+    [Fact]
+    public void Forged_lease_scope_cannot_resolve_a_live_object()
+    {
+        var registry = new HandleRegistry<object>("session-a", 1);
+        var token = registry.Register(new object(), "Body", "request-a");
+        var forged = new ObjectHandleToken
+        {
+            SessionId = token.SessionId, Epoch = token.Epoch, ObjectId = token.ObjectId,
+            Generation = token.Generation, Kind = token.Kind, LeaseScopeId = "request-b"
+        };
+
+        Assert.Throws<StaleObjectHandleException>(() => registry.Resolve(forged));
+    }
+
     private static ObjectHandleToken Clone(ObjectHandleToken token)
     {
         return new ObjectHandleToken
