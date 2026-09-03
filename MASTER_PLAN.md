@@ -474,7 +474,7 @@ LeaseScopeID
 
 ## Tasks
 
-- [ ] make one canonical ObjectRef definition the source of truth for Go protocol, Go proxies and C# Agent;
+- [x] make one canonical ObjectRef definition the source of truth for Go protocol, Go proxies and C# Agent;
 - [x] add generation to production wire protocol and registry;
 - [x] increment generation/revoke identity where handle reuse could occur;
 - [x] remove all `catch {}` fallbacks that convert invalid handles into work/display part or first body;
