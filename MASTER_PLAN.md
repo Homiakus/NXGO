@@ -485,7 +485,7 @@ LeaseScopeID
 - [x] implement explicit lease scopes for query-created ephemeral handles;
 - [x] add per-session handle quotas and per-request produced-handle limits;
 - [x] add bulk release and scope release in public SDK;
-- [ ] avoid creating persistent handles for value-snapshot results when no object proxy is needed;
+- [x] avoid creating persistent handles for value-snapshot results when no object proxy is needed;
 - [x] record registry size/high-watermark diagnostics.
 
 ## Required adversarial tests
