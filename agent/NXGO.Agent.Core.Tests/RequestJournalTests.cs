@@ -203,6 +203,20 @@ public sealed class RequestJournalTests
     }
 
     [Fact]
+    public void Snapshot_round_trips_correlation_and_transaction_ids()
+    {
+        var journal = new RequestJournal();
+        journal.Admit("req-1", "part.save", Array.Empty<byte>(), "corr-1", "tx-1");
+        using var snapshot = new MemoryStream();
+        journal.SaveSnapshot(snapshot);
+
+        var restored = RequestJournal.LoadSnapshot(new MemoryStream(snapshot.ToArray()));
+        Assert.True(restored.TryGet("req-1", out var record));
+        Assert.Equal("corr-1", record!.CorrelationId);
+        Assert.Equal("tx-1", record.TransactionId);
+    }
+
+    [Fact]
     public void Atomic_store_replaces_snapshot_and_loads_it()
     {
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nxgo-journal-" + Guid.NewGuid().ToString("N"), "journal.bin");
