@@ -28,6 +28,7 @@ public static partial class EntryPoint
         {
             Health.RequireReusable();
             var part = (Part)Registry.Resolve(partHandle, "Part");
+            RequireMatchingPartUnits(payload, part);
             Journal.MarkStarted(requestId);
             using (var scope = new BuilderScope<NXOpen.Features.BlockFeatureBuilder>(
                 part.Features.CreateBlockFeatureBuilder(null),
@@ -79,6 +80,7 @@ public static partial class EntryPoint
         {
             Health.RequireReusable();
             var part = (Part)Registry.Resolve(partHandle, "Part");
+            RequireMatchingPartUnits(payload, part);
             Journal.MarkStarted(requestId);
             using (var scope = new BuilderScope<NXOpen.Features.CylinderBuilder>(
                 part.Features.CreateCylinderBuilder(null),
@@ -112,6 +114,16 @@ public static partial class EntryPoint
                 });
             }
         }, token));
+    }
+
+    private static void RequireMatchingPartUnits(Dictionary<string, object> payload, Part part)
+    {
+        var requested = GetString(payload, "units", "").Trim().ToLowerInvariant();
+        var actual = part.PartUnits == (BasePart.Units)Part.Units.Inches ? "inch" : "mm";
+        if (requested == "millimeters") requested = "mm";
+        if (requested == "inches") requested = "inch";
+        if (requested != actual)
+            throw new ArgumentException("feature dimensions units must match owning part units");
     }
 
     private static Task<byte[]> StartQueryBodies(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
