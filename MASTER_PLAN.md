@@ -597,7 +597,7 @@ Recommended initial contract:
 - [x] implement `Part.MassProperties` over all applicable bodies;
 - [x] expose body-level and part-level mass properties as separate semantics;
 - [ ] define behavior for sheet bodies/non-solid bodies/mixed parts;
-- [ ] add density/material semantics instead of silently assuming a misleading mass value.
+- [x] add density/material semantics instead of silently assuming a misleading mass value.
 
 ## H5.2 Feature parameter honesty
 
