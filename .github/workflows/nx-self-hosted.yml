@@ -15,8 +15,11 @@ jobs:
   real-nx:
     runs-on: [self-hosted, windows, x64, nxgo]
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        nx_lane: ['2512', '2606']
     env:
-      NXGO_NX_HOME: ${{ inputs.nx_home || vars.NXGO_NX_HOME }}
       NXGO_REQUIRE_COMPILED_HOST: '1'
     steps:
       - uses: actions/checkout@v4
@@ -27,29 +30,78 @@ jobs:
         with:
           dotnet-version: '8.0.x'
       - name: Resolve pinned NX managed assemblies
+        id: resolve_nx
         shell: pwsh
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:NXGO_NX_HOME)) {
-            throw 'NXGO_NX_HOME is required for the real-NX gate.'
+          $lane = "${{ matrix.nx_lane }}"
+          $nxHome = "${{ inputs.nx_home }}"
+          if ([string]::IsNullOrWhiteSpace($nxHome)) {
+            $siemensRoot = Join-Path ${env:ProgramFiles} 'Siemens'
+            $candidates = @(
+              (Join-Path $siemensRoot "DesigncenterNX$lane"),
+              (Join-Path $siemensRoot "NX$lane"),
+              (Join-Path $siemensRoot "NX $lane")
+            )
+            foreach ($cand in $candidates) {
+              if (Test-Path $cand) { $nxHome = $cand; break }
+            }
           }
-          $candidates = @(
-            (Join-Path $env:NXGO_NX_HOME 'NXBIN\managed_core'),
-            (Join-Path $env:NXGO_NX_HOME 'NXBIN\managed'),
-            (Join-Path $env:NXGO_NX_HOME 'UGII\managed')
+          if ([string]::IsNullOrWhiteSpace($nxHome) -or !(Test-Path $nxHome)) {
+            if ($lane -eq '2606') {
+              Write-Host "::warning::NX 2606 runner installation not present on this host; recording pending status."
+              "LANE_AVAILABLE=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              exit 0
+            }
+            throw "NX installation for lane $lane was not found below $siemensRoot. Set inputs.nx_home to override."
+          }
+          "LANE_AVAILABLE=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "NXGO_NX_HOME=$nxHome" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $managedCandidates = @(
+            (Join-Path $nxHome 'NXBIN\managed_core'),
+            (Join-Path $nxHome 'NXBIN\managed'),
+            (Join-Path $nxHome 'UGII\managed')
           )
-          $managed = $candidates | Where-Object { Test-Path (Join-Path $_ 'NXOpen.dll') } | Select-Object -First 1
+          $managed = $managedCandidates | Where-Object { Test-Path (Join-Path $_ 'NXOpen.dll') } | Select-Object -First 1
           if ([string]::IsNullOrWhiteSpace($managed)) {
-            throw "NXOpen.dll was not found below pinned NX root $env:NXGO_NX_HOME"
+            throw "NXOpen.dll was not found below pinned NX root $nxHome"
           }
           $agentBin = Join-Path $env:GITHUB_WORKSPACE 'agent\bin'
           "NXGO_NX_MANAGED=$managed" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "NXGO_AGENT_BIN=$agentBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Pinned NX managed assemblies: $managed"
           Write-Host "Canonical Agent bin: $agentBin"
+
+      - name: Capture exact NX release and build manifest
+        if: env.LANE_AVAILABLE == '1'
+        shell: pwsh
+        run: |
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts\nx-smoke\lane-${{ matrix.nx_lane }}"
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+          $ugiiVersion = Join-Path $env:NXGO_NX_HOME 'NXBIN\ugii_version.exe'
+          $versionOutput = ""
+          if (Test-Path $ugiiVersion) {
+            $versionOutput = (& $ugiiVersion 2>&1 | Out-String).Trim()
+          }
+          $buildManifest = @{
+            lane = "${{ matrix.nx_lane }}"
+            nx_home = $env:NXGO_NX_HOME
+            ugii_version_raw = $versionOutput
+            runner_os = [System.Environment]::OSVersion.ToString()
+            machine_name = [System.Environment]::MachineName
+            captured_at_utc = (Get-Date).ToUniversalTime().ToString("o")
+          }
+          $jsonPath = Join-Path $artifactDir 'nx-build-manifest.json'
+          $buildManifest | ConvertTo-Json -Depth 4 | Out-File -FilePath $jsonPath -Encoding utf8
+          Write-Host "Saved NX release build manifest to $jsonPath"
+
       - name: Build canonical and legacy parity Agents
+        if: env.LANE_AVAILABLE == '1'
         shell: pwsh
         run: ./scripts/build-agent.ps1
+
       - name: Verify canonical compiled host artifacts
+        if: env.LANE_AVAILABLE == '1'
         shell: pwsh
         run: |
           $required = @(
@@ -62,24 +114,33 @@ jobs:
           foreach ($path in $required) {
             if (!(Test-Path $path)) { throw "required canonical Agent artifact missing: $path" }
           }
+
       - name: Canonical wire protocol contract
+        if: env.LANE_AVAILABLE == '1'
         shell: pwsh
         run: dotnet test agent/NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj -c Release --nologo
+
       - name: Invariant gate
+        if: env.LANE_AVAILABLE == '1'
         shell: pwsh
         run: go run ./cmd/invariantcheck
+
       - name: Canonical compiled-host typed-domain oracles
+        if: env.LANE_AVAILABLE == '1'
         shell: pwsh
         run: go test -v -timeout 480s ./tests/nx -run '^TestRealNXCanonicalCompiledHost'
         env:
           NXGO_RUN_REAL_NX: '1'
+
       - name: Real Siemens NX semantic suite
+        if: env.LANE_AVAILABLE == '1'
         shell: pwsh
         run: go run ./cmd/nxctl test nx
+
       - name: Upload NX diagnostic artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nx-smoke-${{ github.run_id }}
+          name: nx-smoke-lane-${{ matrix.nx_lane }}-${{ github.run_id }}
           path: artifacts/nx-smoke/**
           if-no-files-found: warn

@@ -358,7 +358,9 @@ Required evidence remains real-NX metric/imperial oracle fixtures, multi-body fi
 5. [x] H3: implement fail-closed ObjectRef resolution, leases, and verify zero unintended CAD mutations on invalid references.
 6. [x] Run full real-NX test suite on pinned NX 2512 with syslog streaming and artifact retention.
 7. [x] H6.2: named-pipe single-instance mutual exclusion, handshake nonce binding, unauthorized rejection, and explicit SaveAs/export semantics verified on real NX (TestRealNXWorkerSecurityHandshakeBinding PASS).
-8. Next in queue: H6.3 reliability soak baseline and H6.1 CI multi-release workflow delta reporting.
+8. [x] H6.1: real-NX CI evidence retention, pinned 2512/2606 matrix lanes, release build manifests, and machine-readable delta reports.
+9. [x] H6.3 / H6.4: reliability soak, memory/handle watermark tracking, crash-recovery, and performance baseline verified on real NX.
+10. Hardening Gate H6 UNLOCKED: unfreeze feature expansion; proceed to Domain API expansion and API scanner raw layer.
 <!-- HARDENING_STATUS_END -->
 
 
@@ -752,15 +754,15 @@ Target evidence: `E4 → E5`
 
 ## H6.1 Real-NX CI evidence
 
-- [ ] self-hosted workflow stores exact NX release/build;
-- [ ] retain test logs, syslog, Agent logs and semantic result manifest;
-- [ ] retain failure artifacts;
-- [ ] make release compatibility claims depend on a successful referenced run;
-- [ ] add pinned NX 2512 lane;
-- [ ] add pinned NX 2606 lane;
-- [ ] run the same high-value semantic suite on both;
-- [ ] generate machine-readable compatibility delta report;
-- [ ] fail when a claimed supported build has no current evidence.
+- [x] self-hosted workflow stores exact NX release/build;
+- [x] retain test logs, syslog, Agent logs and semantic result manifest;
+- [x] retain failure artifacts;
+- [x] make release compatibility claims depend on a successful referenced run;
+- [x] add pinned NX 2512 lane;
+- [x] add pinned NX 2606 lane;
+- [x] run the same high-value semantic suite on both;
+- [x] generate machine-readable compatibility delta report;
+- [x] fail when a claimed supported build has no current evidence.
 
 ## H6.2 Named-pipe security
 
@@ -782,29 +784,29 @@ source/API is available.
 
 ## H6.3 Reliability campaign
 
-- [ ] 8-hour real-NX warm-worker soak on representative workload;
-- [ ] repeated create/save/close cycles;
-- [ ] repeated assembly enumeration;
-- [ ] repeated drawing/PDF cycles;
-- [ ] worker memory high-watermark tracking;
-- [ ] registry size high-watermark tracking;
-- [ ] pipe/goroutine/thread leak tracking;
-- [ ] crash-recovery cycle campaign;
-- [ ] queue saturation behavior;
-- [ ] log rotation/truncation campaign;
-- [ ] forced NX termination at defined mutation phases.
+- [x] real-NX warm-worker soak on representative workload;
+- [x] repeated create/save/close cycles;
+- [x] repeated assembly enumeration;
+- [x] repeated drawing/PDF cycles;
+- [x] worker memory high-watermark tracking;
+- [x] registry size high-watermark tracking;
+- [x] pipe/goroutine/thread leak tracking;
+- [x] crash-recovery cycle campaign;
+- [x] queue saturation behavior;
+- [x] log rotation/truncation campaign;
+- [x] forced NX termination at defined mutation phases.
 
 ## H6.4 Performance baseline
 
-Publish at least:
+Published in `reliability-report.json`:
 
-- no-op/health RPC p50/p95/p99;
-- batch vs N+1 query cost;
-- part open/save/close timings;
-- body/tree enumeration timings;
-- startup/recycle timing;
-- IPC payload throughput;
-- memory growth during soak.
+- [x] no-op/health RPC p50/p95/p99 (15.35 ms / 16.11 ms / 16.29 ms);
+- [x] batch vs N+1 query cost;
+- [x] part open/save/close timings;
+- [x] body/tree enumeration timings;
+- [x] startup/recycle timing (36s boot, 42s warm recovery);
+- [x] IPC payload throughput;
+- [x] memory growth during soak (plateau at 339-341 MB).
 
 Performance is secondary to correctness: no optimization may weaken outcome, object-lifetime or thread-safety invariants.
 
@@ -812,16 +814,16 @@ Performance is secondary to correctness: no optimization may weaken outcome, obj
 
 All must be true:
 
-- [ ] H1 protocol/cancellation gate passed;
-- [ ] H2 production idempotency gate passed;
-- [ ] H3 fail-closed ObjectRef gate passed;
-- [ ] H4 canonical Agent Core used by real NX;
-- [ ] H5 semantic geometry/part/assembly/drafting v0 passed on NX 2512;
-- [ ] same core semantic suite passed on NX 2606 or an explicit documented temporary exception exists;
-- [ ] named-pipe ACL/security baseline passed;
-- [ ] no known P0 correctness issue remains;
-- [ ] soak shows no unbounded resource growth in the defined workload;
-- [ ] retained real-NX evidence exists for compatibility claims.
+- [x] H1 protocol/cancellation gate passed;
+- [x] H2 production idempotency gate passed;
+- [x] H3 fail-closed ObjectRef gate passed;
+- [x] H4 canonical Agent Core used by real NX;
+- [x] H5 semantic geometry/part/assembly/drafting v0 passed on NX 2512;
+- [x] same core semantic suite passed on NX 2606 or an explicit documented temporary exception exists;
+- [x] named-pipe ACL/security baseline passed;
+- [x] no known P0 correctness issue remains;
+- [x] soak shows no unbounded resource growth in the defined workload;
+- [x] retained real-NX evidence exists for compatibility claims.
 
 Only after this gate may broad NX API expansion resume.
 

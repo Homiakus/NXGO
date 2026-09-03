@@ -50,6 +50,7 @@ type WorkerProcess struct {
 	Client        *pipe.Client
 	cmd           *exec.Cmd
 	waitDone      <-chan error
+	output        *synchronizedBuffer
 	mu            sync.Mutex
 	stopped       bool
 	quarantineErr error
@@ -193,6 +194,7 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		Config:   cfg,
 		cmd:      cmd,
 		waitDone: waitDone,
+		output:   &outBuf,
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, cfg.PipeName)
@@ -238,6 +240,12 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		Owner:       os.Getenv("USERNAME"),
 		Mode:        "dedicated-worker",
 		ArtifactDir: cfg.ArtifactDir,
+	}
+
+	if cfg.ArtifactDir != "" {
+		if manifestBytes, err := json.MarshalIndent(wp.Manifest, "", "  "); err == nil {
+			_ = os.WriteFile(filepath.Join(cfg.ArtifactDir, "worker-manifest.json"), manifestBytes, 0644)
+		}
 	}
 
 	return wp, nil
@@ -409,6 +417,31 @@ func (wp *WorkerProcess) QuarantineReason() error {
 	return wp.quarantineErr
 }
 
+// Output returns the combined stdout and stderr captured from the worker runner process.
+func (wp *WorkerProcess) Output() string {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
+	if wp.output == nil {
+		return ""
+	}
+	return wp.output.String()
+}
+
+func (wp *WorkerProcess) flushArtifacts() {
+	if wp.Config.ArtifactDir == "" {
+		return
+	}
+	wp.mu.Lock()
+	out := ""
+	if wp.output != nil {
+		out = wp.output.String()
+	}
+	wp.mu.Unlock()
+	if out != "" {
+		_ = os.WriteFile(filepath.Join(wp.Config.ArtifactDir, "runner-output.log"), []byte(out), 0644)
+	}
+}
+
 func (wp *WorkerProcess) Stop(ctx context.Context) error {
 	wp.mu.Lock()
 	if wp.stopped {
@@ -442,6 +475,7 @@ func (wp *WorkerProcess) Stop(ctx context.Context) error {
 		}
 	}
 	_ = waitForWorkerExit(waitDone, 2*time.Second)
+	wp.flushArtifacts()
 	return killErr
 }
 
@@ -461,6 +495,7 @@ func (wp *WorkerProcess) Kill() error {
 		_ = client.Close()
 	}
 	if alreadyStopped || process == nil {
+		wp.flushArtifacts()
 		return nil
 	}
 
@@ -469,6 +504,7 @@ func (wp *WorkerProcess) Kill() error {
 		err = nil
 	}
 	_ = waitForWorkerExit(waitDone, 2*time.Second)
+	wp.flushArtifacts()
 	return err
 }
 

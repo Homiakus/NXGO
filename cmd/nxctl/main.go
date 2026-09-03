@@ -375,19 +375,33 @@ func runAPIInspect(args []string) error {
 }
 
 func runAPIDiff(args []string) error {
-	if len(args) < 2 {
-		return errors.New("usage: nxctl api diff <manifest-a.json> <manifest-b.json>")
+	asJSON := hasJSONFlag(args)
+	var paths []string
+	for _, a := range args {
+		if a != "--json" && a != "-json" {
+			paths = append(paths, a)
+		}
 	}
-	bA, err := os.ReadFile(args[0])
-	if err != nil { return fmt.Errorf("read %s: %w", args[0], err) }
-	bB, err := os.ReadFile(args[1])
-	if err != nil { return fmt.Errorf("read %s: %w", args[1], err) }
+	if len(paths) < 2 {
+		return errors.New("usage: nxctl api diff [--json] <manifest-a.json> <manifest-b.json>")
+	}
+	bA, err := os.ReadFile(paths[0])
+	if err != nil { return fmt.Errorf("read %s: %w", paths[0], err) }
+	bB, err := os.ReadFile(paths[1])
+	if err != nil { return fmt.Errorf("read %s: %w", paths[1], err) }
 
 	var mA, mB apiscanner.APIManifest
 	if err := json.Unmarshal(bA, &mA); err != nil { return err }
 	if err := json.Unmarshal(bB, &mB); err != nil { return err }
 
 	diff := apiscanner.DiffManifests(&mA, &mB)
+	if asJSON {
+		b, err := json.MarshalIndent(diff, "", "  ")
+		if err != nil { return err }
+		fmt.Println(string(b))
+		return nil
+	}
+
 	fmt.Printf("=== API Diff: %s vs %s ===\n", diff.ReleaseA, diff.ReleaseB)
 	fmt.Printf("Added Types: %d\n", len(diff.AddedTypes))
 	for _, t := range diff.AddedTypes { fmt.Printf("  + [Type] %s\n", t) }

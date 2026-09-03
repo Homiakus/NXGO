@@ -22,6 +22,21 @@
         "declarative_workflow_v0"
       ],
       "claims_forbidden": []
+    },
+    {
+      "release": "2606",
+      "installation": "pending_lane_provisioning",
+      "evidence": {
+        "status": "pending_runner_provisioning"
+      },
+      "finding_refs": [],
+      "claims_allowed": [],
+      "claims_forbidden": [
+        "semantic_cad_v0",
+        "production_compatibility",
+        "canonical_agent_semantic_suite",
+        "declarative_workflow_v0"
+      ]
     }
   ]
 }

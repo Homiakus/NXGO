@@ -37,14 +37,37 @@ func getNXHome(t *testing.T) string {
 	return nxHome
 }
 
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	t.Fatal("could not find repo root containing go.mod")
+	return ""
+}
+
 func startTestWorker(t *testing.T, ctx context.Context) (*supervisor.WorkerProcess, *nxgo.Session) {
 	nxHome := getNXHome(t)
+	artifactDir := filepath.Join(repoRoot(t), "artifacts", "nx-smoke", t.Name())
+	_ = os.MkdirAll(artifactDir, 0755)
 	cfg := supervisor.WorkerConfig{
 		NXHome:         nxHome,
 		StartupTimeout: 45 * time.Second,
+		ArtifactDir:    artifactDir,
 	}
 
-	t.Logf("starting real NX Agent worker against %s...", nxHome)
+	t.Logf("starting real NX Agent worker against %s (artifacts: %s)...", nxHome, artifactDir)
 	worker, err := supervisor.StartWorker(ctx, cfg)
 	if err != nil {
 		t.Fatalf("failed to start real NX Agent worker: %v", err)
