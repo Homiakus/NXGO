@@ -161,6 +161,8 @@ On the installed NX 2512 runner, `tests/nx/TestRealNXAgentBootstrapAndSessionQue
 
 On 2026-09-03 a controlled experiment acquired `Session` in the journal bootstrap and passed it to the reflected NXHost method. Reflection rejected it as `Object of type 'NXOpen.Session' cannot be converted to type 'NXOpen.Session'`, proving that bootstrap and NXHost observe distinct runtime type identities even when assembly names and paths appear identical. The experiment was reverted after capture; the canonical failure remains unchanged.
 
+The same canonical smoke was rerun with the installed NX2512 GUI process already live (`ugraf.exe`, 2026-09-03). It failed identically in `Session.GetSession()` after 26.7 seconds, ruling out the absence of a running NX session as the cause.
+
 ### F-017 — run_journal can remain alive after canonical Agent journal failure — **P1**
 
 During the 2026-09-03 real-NX canonical suite, the first workers surfaced
