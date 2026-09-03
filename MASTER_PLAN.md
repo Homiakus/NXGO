@@ -619,8 +619,8 @@ Recommended initial contract:
 
 ## H5.4 Save/close/data durability
 
-- [ ] never swallow an explicitly requested save failure;
-- [ ] `Close(save=true)` returns error and leaves state diagnosable when save fails;
+- [x] never swallow an explicitly requested save failure;
+- [x] `Close(save=true)` returns error and leaves state diagnosable when save fails;
 - [ ] separate `Close`, `Save`, `SaveAs`, `ForceCloseDiscard` semantics;
 - [ ] stage externally published files before atomic publish where possible;
 - [ ] validate output exists/non-zero and matches intended part/sheet before reporting success;
