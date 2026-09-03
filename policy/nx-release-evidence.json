@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "releases": [
+    {
+      "release": "2512",
+      "installation": "C:\\Program Files\\Siemens\\DesigncenterNX2512",
+      "evidence": {
+        "python_session_smoke": "passed",
+        "canonical_agent_bootstrap": "failed",
+        "canonical_agent_semantic_suite": "blocked_by_A-016",
+        "last_smoke_artifacts": "artifacts/nx-smoke/20260902-232053-595"
+      },
+      "claims_allowed": ["nx_python_session_smoke"],
+      "claims_forbidden": ["canonical_agent_production_ready", "semantic_compatibility"]
+    }
+  ]
+}
