@@ -601,9 +601,9 @@ Recommended initial contract:
 
 ## H5.2 Feature parameter honesty
 
-- [ ] every public parameter is either implemented and verified or rejected as unsupported;
-- [ ] implement/reject `BooleanOp` deterministically;
-- [ ] implement/reject `TargetBodyRef` deterministically;
+- [x] every public parameter is either implemented and verified or rejected as unsupported;
+- [x] implement/reject `BooleanOp` deterministically;
+- [x] implement/reject `TargetBodyRef` deterministically;
 - [ ] validate dimensions/direction vectors before creating NX builders;
 - [ ] normalize zero/negative/tolerance edge cases;
 - [ ] add semantic postconditions after builder commit;
