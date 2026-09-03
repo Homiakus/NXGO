@@ -203,6 +203,7 @@ public static partial class EntryPoint
             var normalized = contract.NormalizeMassProperties(massProps);
             return FormatResponse(requestId, new Dictionary<string, object>
             {
+	            ["units"] = contract.PartLengthUnit == NxgoLengthUnit.Inch ? "inch" : "mm",
                 ["volume"] = normalized.Volume,
                 ["area"] = normalized.Area,
                 ["mass"] = normalized.Mass,
@@ -226,6 +227,7 @@ public static partial class EntryPoint
             var normalized = ContractFor(body).NormalizeBoundingBox(minMax);
             return FormatResponse(requestId, new Dictionary<string, object>
             {
+	            ["units"] = ContractFor(body).PartLengthUnit == NxgoLengthUnit.Inch ? "inch" : "mm",
                 ["min_corner"] = normalized.MinCorner,
                 ["max_corner"] = normalized.MaxCorner,
                 ["dimensions"] = normalized.Dimensions,
