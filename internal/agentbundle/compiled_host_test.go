@@ -275,6 +275,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 func TestCanonicalHostUsesDeclaredMutationClassMap(t *testing.T) {
 	root := repoRootForCompiledHostTest(t)
 	host := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.cs")
+	geometry := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.Geometry.cs")
 	if !strings.Contains(host, "MutationClasses") || !strings.Contains(host, "return MutationClasses.ContainsKey(operation);") {
 		t.Fatal("canonical host must derive journal admission from the declared mutation class map")
 	}
@@ -286,6 +287,15 @@ func TestCanonicalHostUsesDeclaredMutationClassMap(t *testing.T) {
 	for _, op := range []string{"nx.ping", "session.info", "part.query_summary", "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box", "assembly.query_tree", "assembly.query_bom", "drafting.query_sheets"} {
 		if !strings.Contains(host, "\""+op+"\"") {
 			t.Errorf("read-only operation %q is missing from the canonical operation registry", op)
+		}
+	}
+	for _, marker := range []string{
+		"RequireMatchingPartUnits(payload, part);",
+		"private static void RequireMatchingPartUnits(Dictionary<string, object> payload, Part part)",
+		"feature dimensions units must match owning part units",
+	} {
+		if !strings.Contains(geometry, marker) {
+			t.Errorf("canonical host is missing feature-unit validation marker %q", marker)
 		}
 	}
 }
