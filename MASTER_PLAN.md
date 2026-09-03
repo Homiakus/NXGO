@@ -716,7 +716,7 @@ Target evidence: `E4 → E5`
 
 - [ ] explicit Windows DACL scoped to intended user/service identity;
 - [ ] validate pipe ownership/peer expectations where practical;
-- [ ] supervisor generates high-entropy worker secret/nonce;
+- [x] supervisor generates high-entropy worker secret/nonce;
 - [ ] handshake binds client/worker/session identity;
 - [x] operation allowlist remains default;
 - [ ] hardened mode disables journal/reflection/raw execution escape hatches;
