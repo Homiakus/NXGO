@@ -718,7 +718,7 @@ Target evidence: `E4 → E5`
 - [ ] validate pipe ownership/peer expectations where practical;
 - [ ] supervisor generates high-entropy worker secret/nonce;
 - [ ] handshake binds client/worker/session identity;
-- [ ] operation allowlist remains default;
+- [x] operation allowlist remains default;
 - [ ] hardened mode disables journal/reflection/raw execution escape hatches;
 - [ ] unauthorized local client test;
 - [ ] malformed/flooding client test;
@@ -1065,7 +1065,7 @@ Before v1:
 - [ ] bounded pending request count;
 - [ ] bounded registry handles;
 - [ ] bounded logs/event buffers;
-- [ ] allowlisted operations;
+- [x] allowlisted operations;
 - [ ] safe filesystem output policy;
 - [ ] hardened mode without arbitrary journal/library/reflection execution;
 - [ ] no proprietary Siemens assemblies in public artifacts;
