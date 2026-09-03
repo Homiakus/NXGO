@@ -216,3 +216,13 @@ public sealed class ObjectHandleWireDto
     [DataMember(Name = "lease_scope_id", Order = 7, EmitDefaultValue = false)]
     public string? LeaseScopeId { get; set; }
 }
+
+[DataContract]
+public sealed class ObjectReleaseRequestDto
+{
+    [DataMember(Name = "handles", Order = 1, EmitDefaultValue = false)]
+    public ObjectHandleWireDto[]? Handles { get; set; }
+
+    [DataMember(Name = "lease_scope_id", Order = 2, EmitDefaultValue = false)]
+    public string? LeaseScopeId { get; set; }
+}
