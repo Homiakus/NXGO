@@ -1,0 +1,40 @@
+name: protocol-codegen
+
+on:
+  pull_request:
+    paths:
+      - 'proto/**'
+      - 'buf.yaml'
+      - 'buf.gen.yaml'
+      - '.github/workflows/protocol-codegen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: true
+      - name: Install pinned Buf CLI
+        uses: bufbuild/buf-action@v1.5.0
+        with:
+          version: '1.72.0'
+          setup_only: true
+          github_token: ${{ github.token }}
+      - name: Lint protocol schema
+        run: buf lint
+      - name: Generate Go protobuf bindings
+        run: buf generate
+      - name: Upload generated Go bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: nxgo-proto-go
+          path: gen/go
+          if-no-files-found: error
+          retention-days: 7
