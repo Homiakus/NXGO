@@ -131,7 +131,7 @@ Explicit save requests must not report a successful close after swallowing a fai
 
 ### A-010 — production Agent duplicates tested Agent.Core primitives — **P1**
 
-`agent/bundle/AgentWorker.cs` contains duplicate execution, framing, lifecycle, registry, and parsing logic instead of using the canonical tested Agent Core implementation.
+The former `agent/bundle/AgentWorker.cs` contained duplicate execution, framing, lifecycle, registry, and parsing logic; it has been removed from the production source tree in favor of the canonical tested Agent Core implementation.
 
 Risk: safety fixes/tests can apply to one path but not the actual real-NX runtime.
 
@@ -154,6 +154,10 @@ Production endpoint still needs explicit per-user/worker ACL and peer validation
 ### A-015 — public real-NX evidence is incomplete — **P1**
 
 Fast CI is reproducible. Real-NX workflow exists, but release claims must require retained real-NX run evidence and semantic artifact validation rather than checklist status alone.
+
+### A-016 — NX2512 canonical Agent bootstrap cannot acquire Session — **P0**
+
+On the installed NX 2512 runner, `tests/nx/TestRealNXAgentBootstrapAndSessionQuery` starts `run_journal` and loads the canonical Protocol/Core/NXHost assemblies, but `NXOpen.Session.GetSession()` fails with `InvalidCastException` (`NXOpen.Session` to `NXOpen.TaggedObject`). The Python NX smoke still passes, so NX itself is available; the failure is isolated to the C# Agent entrypoint/load context. Two load-policy experiments (`Assembly.Load(byte[])` and `Assembly.LoadFrom`) and an NXOpen-free bootstrap produced the same failure. Until a Siemens-compatible C# entrypoint/assembly-binding fix is verified, canonical Agent real-NX semantic claims remain blocked.
 
 ---
 
@@ -268,7 +272,7 @@ Still required before H3 exit:
 
 ### H4 — Agent Core consolidation — **OPEN**
 
-Production `agent/bundle/AgentWorker.cs` is safer but still duplicates protocol, executor, registry, journal and JSON handling instead of consuming one canonical tested Agent Core implementation. H4 remains the next architectural priority; do not treat duplicated production logic as convergence.
+The former legacy AgentWorker has been removed; H4 remains open for the remaining canonical dispatch/corpus and real-NX evidence work.
 
 ### H5/H6 semantic fixes already landed — **E2 confirmed, E3 pending**
 
@@ -282,7 +286,7 @@ Required evidence remains real-NX metric/imperial oracle fixtures, multi-body fi
 
 ### Immediate next execution order
 
-1. H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer and reduce `AgentWorker.cs` to an NX adapter/bootstrap.
+1. H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer with a minimal compiled NX adapter/bootstrap.
 2. H2: add durable mutation journal recovery so process death after commit cannot permit blind replay.
 3. H3: implement lease scopes, dependent invalidation, per-request handle budgets and registry telemetry.
 4. Run the self-hosted `real-nx-quality-gate` on pinned NX 2512 and retain semantic artifacts for H1/H2/H3/H5/H6.
@@ -298,19 +302,19 @@ Target evidence: `E1 → E2`
 ## Tasks
 
 - [ ] record the audit findings A-001..A-015 in the invariant/ADR system where applicable;
-- [ ] add an `AUDIT_FINDING` or equivalent reference field to remediation tests/commits;
+- [x] add an `AUDIT_FINDING` or equivalent reference field to remediation tests/commits;
 - [ ] change completion language in docs so simulated evidence and real-NX evidence cannot be conflated;
-- [ ] capture current protocol fixtures and golden frames before refactoring;
-- [ ] capture current supported Go/.NET/NX runtime assumptions;
-- [ ] add a machine-readable capability/evidence manifest per tested NX release;
-- [ ] define canonical semantic units for every public geometry quantity;
-- [ ] define mutation classes: read-only / deterministic-idempotent / transactional / ambiguous-nonretryable;
-- [ ] document connection/session quarantine rules.
+- [x] capture current protocol fixtures and golden frames before refactoring;
+- [x] capture current supported Go/.NET/NX runtime assumptions;
+- [x] add a machine-readable capability/evidence manifest per tested NX release;
+- [x] define canonical semantic units for every public geometry quantity;
+- [x] define mutation classes: read-only / deterministic-idempotent / transactional / ambiguous-nonretryable;
+- [x] document connection/session quarantine rules.
 
 ## Tests / gates
 
 - [ ] fast CI remains green;
-- [ ] invariant checker rejects an implementation marked production-safe without required evidence references;
+- [x] invariant checker rejects an implementation marked production-safe without required evidence references;
 - [ ] no new public CAD mutation API is merged while H0-H6 freeze is active unless explicitly justified.
 
 ## Exit gate
@@ -424,7 +428,7 @@ CompletedAt
 - [ ] reject reuse of RequestID with different operation/payload hash;
 - [ ] return cached committed result for safe replay within the same compatible session epoch;
 - [ ] define which read-only operations may bypass journal persistence;
-- [ ] define journal retention and memory/disk bounds;
+- [x] define journal retention and memory/disk bounds;
 - [ ] persist enough state for supervisor recovery policy where process loss occurs;
 - [ ] classify operations by replay policy;
 - [ ] prevent automatic retry of non-idempotent operations without proven outcome;
@@ -528,20 +532,20 @@ The runtime loaded/executed by real NX must consume the same Core primitives exe
 
 ## Tasks
 
-- [ ] eliminate duplicate `NxExecutor` implementation from bundled runtime;
-- [ ] eliminate duplicate frame codec/server implementation where possible;
-- [ ] eliminate duplicate SessionHealth implementation;
-- [ ] eliminate duplicate ObjectRegistry implementation;
-- [ ] eliminate duplicate BuilderScope implementation;
-- [ ] eliminate manual request dispatch parsing;
-- [ ] introduce strongly typed request/response DTOs;
-- [ ] use a real JSON serializer compatible with supported NX/.NET runtime;
-- [ ] make dispatch table explicit and capability-driven;
+- [x] eliminate duplicate `NxExecutor` implementation from the production launch path;
+- [x] eliminate duplicate frame codec/server implementation by removing the legacy runtime;
+- [x] eliminate duplicate SessionHealth implementation by removing the legacy runtime;
+- [x] eliminate duplicate ObjectRegistry implementation by removing the legacy runtime;
+- [x] eliminate duplicate BuilderScope implementation by removing the legacy runtime;
+- [x] eliminate manual request dispatch parsing from the production runtime;
+- [x] introduce strongly typed request/response envelope DTOs;
+- [x] use a real JSON serializer compatible with supported NX/.NET runtime;
+- [x] make operation admission and handshake capabilities derive from one explicit canonical registry;
 - [ ] keep NX-specific adapters thin and release-aware;
 - [ ] keep bootstrap/journal entry point minimal;
 - [ ] make the production build fail if it bypasses canonical Core packages;
-- [ ] add cross-language golden protocol tests using production serializer;
-- [ ] add malformed/escaped/unicode payload corpus.
+- [x] add cross-language golden protocol tests using production serializer;
+- [x] add malformed/escaped/unicode payload corpus.
 
 ## JSON/path test corpus
 
