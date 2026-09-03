@@ -589,7 +589,7 @@ Recommended initial contract:
 
 ## Tasks
 
-- [ ] write a unit table for every geometry protocol field;
+- [x] write a unit table for every geometry protocol field;
 - [ ] replace magic UF unit conversions with named conversion functions/constants;
 - [ ] verify UF call parameter semantics against installed NX API docs/metadata;
 - [ ] include returned unit metadata where ambiguity is possible;
