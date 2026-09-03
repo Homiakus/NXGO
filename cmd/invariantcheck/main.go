@@ -42,6 +42,7 @@ func main() {
 		"docs/TESTING_PLAYBOOK.md",
 		"docs/DEFINITION_OF_DONE.md",
 		"docs/invariants/README.md",
+		"docs/invariants/CANONICAL_SEMANTIC_UNITS.md",
 		"docs/TESTING.md",
 		"docs/EXECUTABLE_QUALITY_GATES.md",
 		"policy/invariant-compliance.json",
