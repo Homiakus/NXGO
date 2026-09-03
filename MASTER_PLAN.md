@@ -159,6 +159,17 @@ Fast CI is reproducible. Real-NX workflow exists, but release claims must requir
 
 On the installed NX 2512 runner, `tests/nx/TestRealNXAgentBootstrapAndSessionQuery` starts `run_journal` and loads the canonical Protocol/Core/NXHost assemblies, but `NXOpen.Session.GetSession()` fails with `InvalidCastException` (`NXOpen.Session` to `NXOpen.TaggedObject`). The Python NX smoke still passes, so NX itself is available; the failure is isolated to the C# Agent entrypoint/load context. Two load-policy experiments (`Assembly.Load(byte[])` and `Assembly.LoadFrom`) and an NXOpen-free bootstrap produced the same failure. Until a Siemens-compatible C# entrypoint/assembly-binding fix is verified, canonical Agent real-NX semantic claims remain blocked.
 
+### F-017 — run_journal can remain alive after canonical Agent journal failure — **P1**
+
+During the 2026-09-03 real-NX canonical suite, the first workers surfaced
+A-016 promptly through `waitDone` and captured output. A subsequent
+`run_journal` invocation remained alive after the same journal failure, so the
+supervisor correctly reached its 90-second startup timeout while no pipe was
+created. This delays repeated real-NX diagnostics and recovery. The fix must
+either make the runner terminate reliably after journal failure or add a
+bounded failure signal that does not mistake a live but unresponsive runner
+for a successful startup.
+
 ---
 
 # 3. Immediate development policy — HARDENING FREEZE
