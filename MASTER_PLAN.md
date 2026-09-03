@@ -427,7 +427,7 @@ CompletedAt
 - [x] move idempotency behavior from Fake-Agent-only semantics into production Agent Core;
 - [x] reject reuse of RequestID with different operation/payload hash;
 - [x] return cached committed result for safe replay within the same compatible session epoch;
-- [ ] define which read-only operations may bypass journal persistence;
+- [x] define which read-only operations may bypass journal persistence;
 - [x] define journal retention and memory/disk bounds;
 - [x] persist enough state for supervisor recovery policy where process loss occurs;
 - [x] classify operations by replay policy;
