@@ -36,6 +36,13 @@ type releaseEvidenceFile struct {
 	Releases []releaseEvidence `json:"releases"`
 }
 
+type auditFindingFile struct {
+	Schema   int `json:"schema"`
+	Findings []struct {
+		ID string `json:"id"`
+	} `json:"findings"`
+}
+
 func main() {
 	required := []string{
 		"docs/ENGINEERING_STANDARD.md",
@@ -47,6 +54,7 @@ func main() {
 		"docs/EXECUTABLE_QUALITY_GATES.md",
 		"policy/invariant-compliance.json",
 		"policy/nx-release-evidence.json",
+		"policy/audit-findings.json",
 		"scripts/nx-real-smoke.ps1",
 		"scripts/build-agent.ps1",
 		"agent/NXGO.Agent.Core/NxExecutor.cs",
@@ -92,6 +100,18 @@ func main() {
 }
 
 func verifyReleaseEvidence() error {
+	findingBytes, err := os.ReadFile("policy/audit-findings.json")
+	if err != nil {
+		return err
+	}
+	var findings auditFindingFile
+	if err := json.Unmarshal(findingBytes, &findings); err != nil || findings.Schema != 1 {
+		return fmt.Errorf("audit findings registry must use schema 1")
+	}
+	known := map[string]struct{}{}
+	for _, finding := range findings.Findings {
+		known[finding.ID] = struct{}{}
+	}
 	b, err := os.ReadFile("policy/nx-release-evidence.json")
 	if err != nil {
 		return err
@@ -120,6 +140,9 @@ func verifyReleaseEvidence() error {
 		for _, finding := range release.FindingRefs {
 			if !regexp.MustCompile(`^A-[0-9]{3}$`).MatchString(finding) {
 				return fmt.Errorf("release %s has invalid audit finding reference %q", release.Release, finding)
+			}
+			if _, ok := known[finding]; !ok {
+				return fmt.Errorf("release %s references unknown audit finding %q", release.Release, finding)
 			}
 		}
 		for _, claim := range release.ClaimsAllowed {

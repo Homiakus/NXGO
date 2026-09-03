@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "findings": [
+    {"id":"A-001","status":"open"}, {"id":"A-002","status":"open"},
+    {"id":"A-003","status":"open"}, {"id":"A-004","status":"open"},
+    {"id":"A-005","status":"open"}, {"id":"A-006","status":"open"},
+    {"id":"A-007","status":"open"}, {"id":"A-008","status":"open"},
+    {"id":"A-009","status":"open"}, {"id":"A-010","status":"mitigated"},
+    {"id":"A-011","status":"mitigated"}, {"id":"A-012","status":"open"},
+    {"id":"A-013","status":"mitigated"}, {"id":"A-014","status":"open"},
+    {"id":"A-015","status":"open"}, {"id":"A-016","status":"open"}
+  ]
+}
