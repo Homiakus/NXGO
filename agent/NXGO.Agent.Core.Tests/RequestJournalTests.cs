@@ -217,6 +217,27 @@ public sealed class RequestJournalTests
     }
 
     [Fact]
+    public void Snapshot_round_trips_rollback_and_failure_outcomes()
+    {
+        var journal = new RequestJournal();
+        journal.Admit("req-rollback", "workflow.mutate", Array.Empty<byte>());
+        journal.MarkStarted("req-rollback");
+        journal.MarkRolledBack("req-rollback", Encoding.UTF8.GetBytes("rollback"));
+        journal.Admit("req-failed", "part.save", Array.Empty<byte>());
+        journal.MarkFailed("req-failed", "validation failed", Encoding.UTF8.GetBytes("failure"));
+
+        using var snapshot = new MemoryStream();
+        journal.SaveSnapshot(snapshot);
+        var restored = RequestJournal.LoadSnapshot(new MemoryStream(snapshot.ToArray()));
+
+        var rollback = restored.Admit("req-rollback", "workflow.mutate", Array.Empty<byte>());
+        Assert.Equal(RequestReplayDisposition.ReturnRolledBackResult, rollback.Disposition);
+        var failed = restored.Admit("req-failed", "part.save", Array.Empty<byte>());
+        Assert.Equal(RequestReplayDisposition.ReturnFailure, failed.Disposition);
+        Assert.Equal("validation failed", failed.Record.Failure);
+    }
+
+    [Fact]
     public void Atomic_store_replaces_snapshot_and_loads_it()
     {
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nxgo-journal-" + Guid.NewGuid().ToString("N"), "journal.bin");
