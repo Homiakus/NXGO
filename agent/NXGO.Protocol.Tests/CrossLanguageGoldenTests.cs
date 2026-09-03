@@ -10,6 +10,16 @@ public sealed class CrossLanguageGoldenTests
     private readonly JsonWireCodec _codec = new JsonWireCodec();
 
     [Fact]
+    public void Scope_release_request_preserves_scope_without_handles()
+    {
+        var json = _codec.SerializeUtf8(new ObjectReleaseRequestDto { LeaseScopeId = "request-scope-42" });
+        var decoded = _codec.Deserialize<ObjectReleaseRequestDto>(Encoding.UTF8.GetBytes(json));
+
+        Assert.Equal("request-scope-42", decoded.LeaseScopeId);
+        Assert.Null(decoded.Handles);
+    }
+
+    [Fact]
     public void Shared_handshake_v2_matches_complete_Go_contract()
     {
         var golden = ReadGolden("handshake_request_v2.json");
