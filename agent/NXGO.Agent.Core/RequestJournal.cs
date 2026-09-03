@@ -249,6 +249,31 @@ public sealed class RequestJournal
         }
     }
 
+    /// <summary>Writes a deterministic, length-delimited snapshot for crash recovery.</summary>
+    public void SaveSnapshot(Stream destination)
+    {
+        if (destination is null) throw new ArgumentNullException(nameof(destination));
+        lock (_sync)
+        {
+            using var writer = new BinaryWriter(destination, Encoding.UTF8, leaveOpen: true);
+            writer.Write(1);
+            writer.Write(_records.Count);
+            foreach (var record in _records.Values.OrderBy(r => r.RequestId, StringComparer.Ordinal))
+            {
+                writer.Write(record.RequestId);
+                writer.Write(record.Operation);
+                writer.Write(record.PayloadHash);
+                writer.Write((int)record.State);
+                writer.Write(record.CreatedAtUtc.Ticks);
+                writer.Write(record.CompletedAtUtc?.Ticks ?? 0);
+                writer.Write(record.Failure ?? string.Empty);
+                writer.Write(record.ResultEnvelope?.Length ?? -1);
+                if (record.ResultEnvelope is not null) writer.Write(record.ResultEnvelope);
+            }
+            writer.Flush();
+        }
+    }
+
     public static string ComputePayloadHash(byte[]? payload)
     {
         payload ??= Array.Empty<byte>();

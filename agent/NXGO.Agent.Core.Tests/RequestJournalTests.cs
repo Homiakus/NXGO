@@ -1,4 +1,5 @@
 using System.Text;
+using System.IO;
 using NXGO.Agent.Core;
 using Xunit;
 
@@ -136,5 +137,19 @@ public sealed class RequestJournalTests
 
         Assert.Throws<InvalidOperationException>(() =>
             journal.MarkOutcomeUnknown("req-1", "too late"));
+    }
+
+    [Fact]
+    public void Snapshot_is_deterministic_and_does_not_close_destination()
+    {
+        var journal = new RequestJournal();
+        journal.Admit("req-2", "part.save", Encoding.UTF8.GetBytes("B"));
+        journal.Admit("req-1", "part.save", Encoding.UTF8.GetBytes("A"));
+        using var first = new MemoryStream();
+        using var second = new MemoryStream();
+        journal.SaveSnapshot(first);
+        journal.SaveSnapshot(second);
+        Assert.Equal(first.ToArray(), second.ToArray());
+        Assert.True(first.CanWrite);
     }
 }
