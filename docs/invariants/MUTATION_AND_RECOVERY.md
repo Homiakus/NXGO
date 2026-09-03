@@ -20,6 +20,11 @@ operation class, execution state and final response before the worker reports a
 successful terminal outcome. A missing, corrupt or incompatible journal is a
 startup/recovery failure, not an empty journal.
 
+When a persisted record is `STARTED`, process recovery cannot prove whether
+the NX mutation committed. The loader MUST convert it to `OUTCOME_UNKNOWN`,
+retain a diagnostic, and reject replay; only `RECEIVED` records may remain
+eligible for a fresh execution after recovery.
+
 ## NXGO-INV-MUT-001 — Builder destruction is unconditional
 
 **MUST NOT:** return, throw, cancel or serialize a response while a created NX Builder is left undisposed/undestroyed.
