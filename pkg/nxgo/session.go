@@ -138,7 +138,11 @@ func (s *Session) ReleaseObjects(ctx context.Context, refs ...protocol.ObjectHan
 			return fmt.Errorf("release object %d: %w", i, err)
 		}
 	}
-	reqData, err := protocol.EncodePayload(protocol.ObjectReleaseRequest{Handles: refs})
+	releaseRequest := protocol.ObjectReleaseRequest{Handles: refs}
+	if err := releaseRequest.Validate(); err != nil {
+		return err
+	}
+	reqData, err := protocol.EncodePayload(releaseRequest)
 	if err != nil {
 		return err
 	}
@@ -158,13 +162,27 @@ func (s *Session) ReleaseObjects(ctx context.Context, refs ...protocol.ObjectHan
 
 // ReleaseScope releases all ephemeral handles issued for a request scope.
 func (s *Session) ReleaseScope(ctx context.Context, scopeID string) error {
-	if err := s.validateOpen(); err != nil { return err }
-	if scopeID == "" { return errors.New("lease scope id is required") }
-	reqData, err := protocol.EncodePayload(protocol.ObjectReleaseRequest{LeaseScopeID: scopeID})
-	if err != nil { return err }
+	if err := s.validateOpen(); err != nil {
+		return err
+	}
+	if scopeID == "" {
+		return errors.New("lease scope id is required")
+	}
+	releaseRequest := protocol.ObjectReleaseRequest{LeaseScopeID: scopeID}
+	if err := releaseRequest.Validate(); err != nil {
+		return err
+	}
+	reqData, err := protocol.EncodePayload(releaseRequest)
+	if err != nil {
+		return err
+	}
 	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{RequestID: newRequestID("object.release"), Op: "object.release", Payload: reqData})
-	if err != nil { return err }
-	if resp.Status != protocol.StatusOK { return formatError(resp.Error) }
+	if err != nil {
+		return err
+	}
+	if resp.Status != protocol.StatusOK {
+		return formatError(resp.Error)
+	}
 	return nil
 }
 

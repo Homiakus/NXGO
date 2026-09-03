@@ -279,6 +279,16 @@ type ObjectReleaseRequest struct {
 	LeaseScopeID string             `json:"lease_scope_id,omitempty"`
 }
 
+func (r ObjectReleaseRequest) Validate() error {
+	if r.LeaseScopeID != "" && len(r.Handles) > 0 {
+		return errors.New("object release cannot combine lease_scope_id and handles")
+	}
+	if r.LeaseScopeID == "" && len(r.Handles) == 0 {
+		return errors.New("object release requires lease_scope_id or handles")
+	}
+	return nil
+}
+
 type ObjectReleaseResponse struct {
 	ReleasedCount int `json:"released_count"`
 }
@@ -467,7 +477,3 @@ type DraftingSheetInfoWire struct {
 type DraftingQuerySheetsResponse struct {
 	Sheets []DraftingSheetInfoWire `json:"sheets"`
 }
-
-
-
-

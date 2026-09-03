@@ -18,4 +18,13 @@ func TestObjectReleaseRequestSupportsScopeWithoutHandles(t *testing.T) {
 	if len(decoded.Handles) != 0 {
 		t.Fatalf("scope release must not carry handles: got %d", len(decoded.Handles))
 	}
+	if err := decoded.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (ObjectReleaseRequest{}).Validate(); err == nil {
+		t.Fatal("expected empty release request to fail")
+	}
+	if err := (ObjectReleaseRequest{LeaseScopeID: "scope", Handles: []ObjectHandleWire{{ObjectID: "obj-1"}}}).Validate(); err == nil {
+		t.Fatal("expected mixed release request to fail")
+	}
 }
