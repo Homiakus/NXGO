@@ -184,6 +184,16 @@ public sealed class RequestJournalTests
             var store = new AtomicRequestJournalStore(path);
             store.Save(journal);
             Assert.Equal(RequestReplayDisposition.InFlight, store.Load().Admit("req-1", "part.save", Array.Empty<byte>()).Disposition);
+
+            journal.MarkStarted("req-1");
+            journal.MarkCommitted("req-1", Encoding.UTF8.GetBytes("saved"));
+            store.Save(journal);
+            var restored = store.Load();
+            var replay = restored.Admit("req-1", "part.save", Array.Empty<byte>());
+            Assert.Equal(RequestReplayDisposition.ReturnCommittedResult, replay.Disposition);
+            Assert.Equal("saved", Encoding.UTF8.GetString(replay.Record.ResultEnvelope!));
+
+            Assert.False(File.Exists(path + ".tmp"));
         }
         finally
         {
