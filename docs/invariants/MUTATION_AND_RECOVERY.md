@@ -20,6 +20,13 @@ operation class, execution state and final response before the worker reports a
 successful terminal outcome. A missing, corrupt or incompatible journal is a
 startup/recovery failure, not an empty journal.
 
+The production operation registry currently treats `nx.ping`, `session.info`,
+`part.query_summary`, `part.query_bodies`, `geometry.query_mass_properties`,
+`geometry.query_bounding_box`, `assembly.query_tree`, `assembly.query_bom` and
+`drafting.query_sheets` as `READ_ONLY`; these operations bypass mutation-journal
+persistence. Any new operation must be added to either this read-only set or
+the explicit mutation classification map before it is exposed.
+
 When a persisted record is `STARTED`, process recovery cannot prove whether
 the NX mutation committed. The loader MUST convert it to `OUTCOME_UNKNOWN`,
 retain a diagnostic, and reject replay; only `RECEIVED` records may remain
