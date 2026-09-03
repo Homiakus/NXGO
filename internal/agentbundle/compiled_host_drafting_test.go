@@ -27,6 +27,8 @@ func TestCanonicalCompiledHostDraftingLaneIsWired(t *testing.T) {
 		"requested drawing sheets were not found",
 		"SelectDrawingSheets(part, requestedSheets)",
 		"NX produced an empty PDF artifact",
+		"if (!File.Exists(outputPath))",
+		"var size = new FileInfo(outputPath).Length",
 	} {
 		if !strings.Contains(drafting, marker) {
 			t.Errorf("canonical Drafting adapter missing safety marker %q", marker)
