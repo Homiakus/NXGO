@@ -275,7 +275,8 @@ type PartSummaryResponse struct {
 // Object registry operation payloads (Phase 5)
 
 type ObjectReleaseRequest struct {
-	Handles []ObjectHandleWire `json:"handles"`
+	Handles      []ObjectHandleWire `json:"handles,omitempty"`
+	LeaseScopeID string             `json:"lease_scope_id,omitempty"`
 }
 
 type ObjectReleaseResponse struct {

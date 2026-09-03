@@ -156,6 +156,18 @@ func (s *Session) ReleaseObjects(ctx context.Context, refs ...protocol.ObjectHan
 	return nil
 }
 
+// ReleaseScope releases all ephemeral handles issued for a request scope.
+func (s *Session) ReleaseScope(ctx context.Context, scopeID string) error {
+	if err := s.validateOpen(); err != nil { return err }
+	if scopeID == "" { return errors.New("lease scope id is required") }
+	reqData, err := protocol.EncodePayload(protocol.ObjectReleaseRequest{LeaseScopeID: scopeID})
+	if err != nil { return err }
+	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{RequestID: newRequestID("object.release"), Op: "object.release", Payload: reqData})
+	if err != nil { return err }
+	if resp.Status != protocol.StatusOK { return formatError(resp.Error) }
+	return nil
+}
+
 func (s *Session) Close() error {
 	if s == nil || s.client == nil {
 		return nil
