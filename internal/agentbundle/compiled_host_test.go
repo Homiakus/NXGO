@@ -144,6 +144,8 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"leaseScopeId: requestId",
 		"leaseScopeLimit: MaxProducedHandlesPerRequest",
 		"StartObjectRelease",
+		"GetString(payload, \"lease_scope_id\", \"\")",
+		"Registry.ReleaseScope(leaseScopeId)",
 	} {
 		if !strings.Contains(geometry, marker) {
 			t.Errorf("canonical Geometry adapter missing Core/lifetime marker %q", marker)
