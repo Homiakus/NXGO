@@ -8,7 +8,7 @@
         "python_session_smoke": "passed",
         "canonical_agent_bootstrap": "failed",
         "canonical_agent_semantic_suite": "blocked_by_A-016",
-        "last_smoke_artifacts": "artifacts/nx-smoke/20260902-232053-595"
+        "last_smoke_artifacts": "artifacts/nx-smoke/20260902-234406-854"
       },
       "finding_refs": ["A-016"],
       "claims_allowed": ["nx_python_session_smoke"],
