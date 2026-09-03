@@ -1,5 +1,25 @@
 # Mutation, Builder and recovery invariants
 
+## Mutation outcome classes
+
+Every operation admitted by the production Agent MUST declare exactly one
+outcome class before execution:
+
+- `READ_ONLY`: no model or external mutation; safe to repeat when the session
+  remains healthy.
+- `DETERMINISTIC_IDEMPOTENT`: repeated use of the same request identity and
+  payload returns the recorded result without executing NX again.
+- `TRANSACTIONAL`: model changes are bounded by an undo/transaction boundary;
+  replay is forbidden unless the recorded state proves rollback or commit.
+- `AMBIGUOUS_NONRETRYABLE`: execution may have started but its outcome cannot
+  be proven; return `OUTCOME_UNKNOWN`, quarantine the worker and never replay
+  automatically.
+
+The request journal MUST persist the request identity, payload fingerprint,
+operation class, execution state and final response before the worker reports a
+successful terminal outcome. A missing, corrupt or incompatible journal is a
+startup/recovery failure, not an empty journal.
+
 ## NXGO-INV-MUT-001 — Builder destruction is unconditional
 
 **MUST NOT:** return, throw, cancel or serialize a response while a created NX Builder is left undisposed/undestroyed.

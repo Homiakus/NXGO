@@ -94,6 +94,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 
 	for _, marker := range []string{
 		"using NXGO.Agent.Core;",
+		"EntryPoint.Run",
 		"new NxExecutor()",
 		"new NamedPipeRequestServer",
 		"HandleRegistry<TaggedObject>",
@@ -245,5 +246,28 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		!strings.Contains(build, "NXGO.Agent.Core.dll") ||
 		!strings.Contains(build, "NXGO.Agent.NXHost.dll") {
 		t.Fatal("build-agent.ps1 must build and verify canonical Protocol/Core/NXHost runtime outputs")
+	}
+	for _, forbidden := range []string{
+		"AgentWorker.dll",
+		"Compiling transitional legacy AgentWorker",
+		"Framework64\\v4.0.30319\\csc.exe",
+		"$legacySrc",
+	} {
+		if strings.Contains(build, forbidden) {
+			t.Errorf("build-agent.ps1 must not compile legacy AgentWorker: %q", forbidden)
+		}
+	}
+}
+
+func TestCanonicalHostUsesDeclaredMutationClassMap(t *testing.T) {
+	root := repoRootForCompiledHostTest(t)
+	host := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.cs")
+	if !strings.Contains(host, "MutationClasses") || !strings.Contains(host, "return MutationClasses.ContainsKey(operation);") {
+		t.Fatal("canonical host must derive journal admission from the declared mutation class map")
+	}
+	for _, op := range []string{"part.new", "feature.create_block", "transaction.commit", "assembly.add_component", "drafting.export_pdf"} {
+		if !strings.Contains(host, "[\""+op+"\"] = MutationOutcomeClass.") {
+			t.Errorf("mutation operation %q has no declared outcome class", op)
+		}
 	}
 }
