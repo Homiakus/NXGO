@@ -39,7 +39,8 @@ type releaseEvidenceFile struct {
 type auditFindingFile struct {
 	Schema   int `json:"schema"`
 	Findings []struct {
-		ID string `json:"id"`
+		ID     string `json:"id"`
+		Status string `json:"status"`
 	} `json:"findings"`
 }
 
@@ -110,6 +111,15 @@ func verifyReleaseEvidence() error {
 	}
 	known := map[string]struct{}{}
 	for _, finding := range findings.Findings {
+		if !regexp.MustCompile(`^A-[0-9]{3}$`).MatchString(finding.ID) {
+			return fmt.Errorf("audit findings registry has invalid id %q", finding.ID)
+		}
+		if finding.Status != "open" && finding.Status != "mitigated" {
+			return fmt.Errorf("audit finding %s has invalid status %q", finding.ID, finding.Status)
+		}
+		if _, exists := known[finding.ID]; exists {
+			return fmt.Errorf("audit findings registry contains duplicate id %q", finding.ID)
+		}
 		known[finding.ID] = struct{}{}
 	}
 	b, err := os.ReadFile("policy/nx-release-evidence.json")
