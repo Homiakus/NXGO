@@ -22,7 +22,10 @@ public sealed class AtomicRequestJournalStore
         var temp = Path + ".tmp-" + Guid.NewGuid().ToString("N");
         try
         {
-            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            // WriteThrough plus Flush(true) makes the complete snapshot durable
+            // before the rename publishes it. A partially written primary file
+            // is therefore never the result of this store's own Save operation.
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
             {
                 journal.SaveSnapshot(stream);
                 stream.Flush(true);
