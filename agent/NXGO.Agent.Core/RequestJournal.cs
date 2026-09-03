@@ -309,10 +309,16 @@ public sealed class RequestJournal
             if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(operation) || payloadHash.Length != 64 || !Enum.IsDefined(typeof(RequestJournalState), state))
                 throw new InvalidDataException("invalid request journal record");
             if (journal._records.ContainsKey(requestId)) throw new InvalidDataException("duplicate request journal id");
+            var restoredState = state == RequestJournalState.Started ? RequestJournalState.OutcomeUnknown : state;
+            var restoredFailure = string.IsNullOrEmpty(failure) ? null : failure;
+            if (state == RequestJournalState.Started)
+            {
+                restoredFailure = "process recovery cannot prove outcome after execution started";
+            }
             journal._records.Add(requestId, new RequestJournalRecord(requestId, operation, payloadHash, created, EmptyToNull(correlationId), EmptyToNull(transactionId))
             {
-                State = state,
-                Failure = string.IsNullOrEmpty(failure) ? null : failure,
+                State = restoredState,
+                Failure = restoredFailure,
                 ResultEnvelope = result,
                 CompletedAtUtc = completedTicks == 0 ? null : new DateTime(completedTicks, DateTimeKind.Utc),
             });

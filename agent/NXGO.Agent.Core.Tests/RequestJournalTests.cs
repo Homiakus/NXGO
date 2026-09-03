@@ -189,6 +189,9 @@ public sealed class RequestJournalTests
             Assert.Equal(RequestReplayDisposition.InFlight, store.Load().Admit("req-1", "part.save", Array.Empty<byte>()).Disposition);
 
             journal.MarkStarted("req-1");
+            store.Save(journal);
+            Assert.Equal(RequestReplayDisposition.OutcomeUnknown, store.Load().Admit("req-1", "part.save", Array.Empty<byte>()).Disposition);
+
             journal.MarkCommitted("req-1", Encoding.UTF8.GetBytes("saved"));
             store.Save(journal);
             var restored = store.Load();
