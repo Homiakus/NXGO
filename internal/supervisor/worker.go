@@ -169,11 +169,16 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	})
 
 	// Perform handshake.
+	nonce, err := newWorkerNonce()
+	if err != nil {
+		_ = wp.Kill()
+		return nil, fmt.Errorf("generate worker handshake nonce: %w", err)
+	}
 	hsResp, err := client.Handshake(ctx, &protocol.HandshakeRequest{
 		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
 		SDKVersion:      "v0.1.0",
 		ClientPID:       os.Getpid(),
-		Nonce:           fmt.Sprintf("nonce-%d", time.Now().UnixNano()),
+		Nonce:           nonce,
 	})
 	if err != nil {
 		_ = wp.Kill()
