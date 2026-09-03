@@ -313,7 +313,7 @@ Target evidence: `E1 → E2`
 
 ## Tests / gates
 
-- [ ] fast CI remains green;
+- [x] fast CI remains green;
 - [x] invariant checker rejects an implementation marked production-safe without required evidence references;
 - [ ] no new public CAD mutation API is merged while H0-H6 freeze is active unless explicitly justified.
 
