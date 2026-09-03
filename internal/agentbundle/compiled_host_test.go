@@ -283,4 +283,9 @@ func TestCanonicalHostUsesDeclaredMutationClassMap(t *testing.T) {
 			t.Errorf("mutation operation %q has no declared outcome class", op)
 		}
 	}
+	for _, op := range []string{"nx.ping", "session.info", "part.query_summary", "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box", "assembly.query_tree", "assembly.query_bom", "drafting.query_sheets"} {
+		if !strings.Contains(host, "\""+op+"\"") {
+			t.Errorf("read-only operation %q is missing from the canonical operation registry", op)
+		}
+	}
 }
