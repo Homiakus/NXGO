@@ -45,6 +45,7 @@ public static partial class EntryPoint
 
                 var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
                 var bodies = feature.GetBodies();
+                if (bodies == null || bodies.Length == 0) throw new InvalidOperationException("block feature commit produced no body");
                 var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
                 var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
                 object bodyWire = new Dictionary<string, object>();
@@ -96,6 +97,7 @@ public static partial class EntryPoint
 
                 var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
                 var bodies = feature.GetBodies();
+                if (bodies == null || bodies.Length == 0) throw new InvalidOperationException("cylinder feature commit produced no body");
                 var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
                 var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
                 object bodyWire = new Dictionary<string, object>();
