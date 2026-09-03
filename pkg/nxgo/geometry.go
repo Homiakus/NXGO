@@ -89,6 +89,7 @@ func (p *Part) CreateBlock(ctx context.Context, params BlockParams) (*Feature, e
 	}
 	reqData, err := protocol.EncodePayload(protocol.FeatureCreateBlockRequest{
 		PartRef:       &p.Ref,
+		Units:         p.Units,
 		Origin:        params.Origin,
 		Length:        params.Length,
 		Width:         params.Width,
@@ -135,6 +136,7 @@ func (p *Part) CreateCylinder(ctx context.Context, params CylinderParams) (*Feat
 	}
 	reqData, err := protocol.EncodePayload(protocol.FeatureCreateCylinderRequest{
 		PartRef:       &p.Ref,
+		Units:         p.Units,
 		Origin:        params.Origin,
 		Direction:     params.Direction,
 		Diameter:      params.Diameter,

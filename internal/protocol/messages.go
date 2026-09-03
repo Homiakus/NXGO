@@ -297,6 +297,7 @@ type ObjectReleaseResponse struct {
 
 type FeatureCreateBlockRequest struct {
 	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	Units         string            `json:"units"`
 	Origin        [3]float64        `json:"origin"`
 	Length        float64           `json:"length"`
 	Width         float64           `json:"width"`
@@ -314,6 +315,7 @@ type FeatureCreateBlockResponse struct {
 
 type FeatureCreateCylinderRequest struct {
 	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	Units         string            `json:"units"`
 	Origin        [3]float64        `json:"origin"`
 	Direction     [3]float64        `json:"direction,omitempty"` // default [0, 0, 1]
 	Diameter      float64           `json:"diameter"`
