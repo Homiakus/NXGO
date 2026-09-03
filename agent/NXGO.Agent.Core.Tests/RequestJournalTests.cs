@@ -190,7 +190,10 @@ public sealed class RequestJournalTests
 
             journal.MarkStarted("req-1");
             store.Save(journal);
-            Assert.Equal(RequestReplayDisposition.OutcomeUnknown, store.Load().Admit("req-1", "part.save", Array.Empty<byte>()).Disposition);
+            var recovered = store.Load().Admit("req-1", "part.save", Array.Empty<byte>());
+            Assert.Equal(RequestReplayDisposition.OutcomeUnknown, recovered.Disposition);
+            Assert.Null(recovered.Record.ResultEnvelope);
+            Assert.Contains("cannot prove outcome", recovered.Record.Failure);
 
             journal.MarkCommitted("req-1", Encoding.UTF8.GetBytes("saved"));
             store.Save(journal);
