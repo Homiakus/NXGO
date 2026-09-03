@@ -51,6 +51,7 @@ func main() {
 		"docs/DEFINITION_OF_DONE.md",
 		"docs/invariants/README.md",
 		"docs/invariants/CANONICAL_SEMANTIC_UNITS.md",
+		"docs/invariants/AUDIT_FINDINGS.md",
 		"docs/TESTING.md",
 		"docs/EXECUTABLE_QUALITY_GATES.md",
 		"policy/invariant-compliance.json",
@@ -91,6 +92,9 @@ func main() {
 	if err := verifyReleaseEvidence(); err != nil {
 		fatalf("release evidence: %v", err)
 	}
+	if err := verifyAuditIndex(); err != nil {
+		fatalf("audit finding index: %v", err)
+	}
 	if err := verifyPureGoBoundary(); err != nil {
 		fatalf("pure-Go boundary: %v", err)
 	}
@@ -98,6 +102,33 @@ func main() {
 		fatalf("Agent Siemens boundary: %v", err)
 	}
 	fmt.Printf("invariantcheck: PASS (%d invariant IDs, compliance map valid, Go/Agent dependency boundaries valid)\n", len(catalog))
+}
+
+func verifyAuditIndex() error {
+	registryBytes, err := os.ReadFile("policy/audit-findings.json")
+	if err != nil {
+		return err
+	}
+	var registry auditFindingFile
+	if err := json.Unmarshal(registryBytes, &registry); err != nil {
+		return fmt.Errorf("decode registry: %w", err)
+	}
+	indexBytes, err := os.ReadFile("docs/invariants/AUDIT_FINDINGS.md")
+	if err != nil {
+		return err
+	}
+	index := string(indexBytes)
+	for _, finding := range registry.Findings {
+		row := regexp.MustCompile(`(?m)^\| ` + regexp.QuoteMeta(finding.ID) + ` \| ([a-z_]+) \|`)
+		match := row.FindStringSubmatch(index)
+		if len(match) != 2 {
+			return fmt.Errorf("audit index is missing %s", finding.ID)
+		}
+		if match[1] != finding.Status {
+			return fmt.Errorf("audit index status for %s is %q, registry says %q", finding.ID, match[1], finding.Status)
+		}
+	}
+	return nil
 }
 
 func verifyReleaseEvidence() error {
