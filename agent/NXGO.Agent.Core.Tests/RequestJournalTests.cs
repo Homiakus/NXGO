@@ -1,5 +1,6 @@
 using System.Text;
 using System.IO;
+using System;
 using NXGO.Agent.Core;
 using Xunit;
 
@@ -170,5 +171,24 @@ public sealed class RequestJournalTests
         var bytes = snapshot.ToArray();
         using var truncated = new MemoryStream(bytes[..^1]);
         Assert.ThrowsAny<Exception>(() => RequestJournal.LoadSnapshot(truncated));
+    }
+
+    [Fact]
+    public void Atomic_store_replaces_snapshot_and_loads_it()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nxgo-journal-" + Guid.NewGuid().ToString("N"), "journal.bin");
+        try
+        {
+            var journal = new RequestJournal();
+            journal.Admit("req-1", "part.save", Array.Empty<byte>());
+            var store = new AtomicRequestJournalStore(path);
+            store.Save(journal);
+            Assert.Equal(RequestReplayDisposition.InFlight, store.Load().Admit("req-1", "part.save", Array.Empty<byte>()).Disposition);
+        }
+        finally
+        {
+            var directory = System.IO.Path.GetDirectoryName(path);
+            if (directory != null && Directory.Exists(directory)) Directory.Delete(directory, true);
+        }
     }
 }
