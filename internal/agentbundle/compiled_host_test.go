@@ -103,6 +103,7 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 		"WireMessageProbeDto",
 		"RequestEnvelopeDto",
 		"ResponseEnvelopeDto",
+		"Journal.Admit(requestId, operation, Wire.Serialize(requestPayload), request.CorrelationId, request.TxId)",
 		"ProtocolMajor = 2",
 		"part.new",
 		"part.open",
