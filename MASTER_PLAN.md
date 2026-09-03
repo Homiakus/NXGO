@@ -495,10 +495,10 @@ LeaseScopeID
 - [x] wrong generation;
 - [x] wrong kind;
 - [x] released handle;
-- [ ] closed-part handle;
+- [x] closed-part handle;
 - [x] handle from another worker;
-- [ ] body handle passed where part is expected;
-- [ ] explicitly invalid handle while a valid work part exists — operation must fail, never fall back;
+- [x] body handle passed where part is expected;
+- [x] explicitly invalid handle while a valid work part exists — operation must fail, never fall back;
 - [x] repeated tree/body queries stay below defined registry bound after scope release;
 - [x] fuzz reference decoding and lifecycle transition sequences.
 
