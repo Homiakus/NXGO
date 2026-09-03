@@ -65,6 +65,12 @@ Every detailed invariant uses:
 | NXGO-INV-TEST-003 | New NX release is never declared supported without real-NX matrix | [Observability/testing](OBSERVABILITY_AND_TESTING.md) |
 | NXGO-INV-TEST-004 | Recovery behavior is tested with fault/chaos injection | [Observability/testing](OBSERVABILITY_AND_TESTING.md) |
 
+## Audit traceability
+
+The current audit finding registry and its evidence status are indexed in
+[Audit findings](AUDIT_FINDINGS.md) and verified against
+`policy/audit-findings.json` by `cmd/invariantcheck`.
+
 ## Severity
 
 - **P0 invariant**: violation can corrupt NX state, produce wrong CAD output, deadlock, or make recovery unsafe. Merge is blocked.
