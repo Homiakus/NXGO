@@ -1061,9 +1061,9 @@ Before v1:
 
 - [ ] per-user/service pipe ACL;
 - [ ] random per-worker authentication material;
-- [ ] bounded frame size;
-- [ ] bounded pending request count;
-- [ ] bounded registry handles;
+- [x] bounded frame size;
+- [x] bounded pending request count;
+- [x] bounded registry handles;
 - [ ] bounded logs/event buffers;
 - [x] allowlisted operations;
 - [ ] safe filesystem output policy;
