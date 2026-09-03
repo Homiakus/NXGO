@@ -604,8 +604,8 @@ Recommended initial contract:
 - [x] every public parameter is either implemented and verified or rejected as unsupported;
 - [x] implement/reject `BooleanOp` deterministically;
 - [x] implement/reject `TargetBodyRef` deterministically;
-- [ ] validate dimensions/direction vectors before creating NX builders;
-- [ ] normalize zero/negative/tolerance edge cases;
+- [x] validate dimensions/direction vectors before creating NX builders;
+- [x] normalize zero/negative/tolerance edge cases;
 - [ ] add semantic postconditions after builder commit;
 - [ ] integrate required UpdateManager/update semantics per operation recipe.
 
