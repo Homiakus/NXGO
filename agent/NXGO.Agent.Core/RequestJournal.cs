@@ -51,12 +51,16 @@ public sealed class RequestJournalRecord
         string requestId,
         string operation,
         string payloadHash,
-        DateTime createdAtUtc)
+        DateTime createdAtUtc,
+        string? correlationId = null,
+        string? transactionId = null)
     {
         RequestId = requestId;
         Operation = operation;
         PayloadHash = payloadHash;
         CreatedAtUtc = createdAtUtc;
+        CorrelationId = correlationId;
+        TransactionId = transactionId;
         State = RequestJournalState.Received;
     }
 
@@ -67,11 +71,13 @@ public sealed class RequestJournalRecord
     public byte[]? ResultEnvelope { get; internal set; }
     public string? Failure { get; internal set; }
     public DateTime CreatedAtUtc { get; }
+    public string? CorrelationId { get; }
+    public string? TransactionId { get; }
     public DateTime? CompletedAtUtc { get; internal set; }
 
     internal RequestJournalRecord Snapshot()
     {
-        return new RequestJournalRecord(RequestId, Operation, PayloadHash, CreatedAtUtc)
+        return new RequestJournalRecord(RequestId, Operation, PayloadHash, CreatedAtUtc, CorrelationId, TransactionId)
         {
             State = State,
             ResultEnvelope = ResultEnvelope is null ? null : (byte[])ResultEnvelope.Clone(),
@@ -127,7 +133,7 @@ public sealed class RequestJournal
         }
     }
 
-    public RequestAdmission Admit(string requestId, string operation, byte[]? payload)
+    public RequestAdmission Admit(string requestId, string operation, byte[]? payload, string? correlationId = null, string? transactionId = null)
     {
         if (string.IsNullOrWhiteSpace(requestId)) throw new ArgumentException("request id is required", nameof(requestId));
         if (string.IsNullOrWhiteSpace(operation)) throw new ArgumentException("operation is required", nameof(operation));
@@ -151,7 +157,7 @@ public sealed class RequestJournal
                 throw new RequestJournalCapacityException(_capacity);
             }
 
-            var record = new RequestJournalRecord(requestId, operation, hash, DateTime.UtcNow);
+            var record = new RequestJournalRecord(requestId, operation, hash, DateTime.UtcNow, correlationId, transactionId);
             _records.Add(requestId, record);
             return new RequestAdmission(RequestReplayDisposition.New, record.Snapshot());
         }
@@ -256,13 +262,15 @@ public sealed class RequestJournal
         lock (_sync)
         {
             using var writer = new BinaryWriter(destination, Encoding.UTF8, leaveOpen: true);
-            writer.Write(1);
+            writer.Write(2);
             writer.Write(_records.Count);
             foreach (var record in _records.Values.OrderBy(r => r.RequestId, StringComparer.Ordinal))
             {
                 writer.Write(record.RequestId);
                 writer.Write(record.Operation);
                 writer.Write(record.PayloadHash);
+                writer.Write(record.CorrelationId ?? string.Empty);
+                writer.Write(record.TransactionId ?? string.Empty);
                 writer.Write((int)record.State);
                 writer.Write(record.CreatedAtUtc.Ticks);
                 writer.Write(record.CompletedAtUtc?.Ticks ?? 0);
@@ -279,7 +287,8 @@ public sealed class RequestJournal
         if (source is null) throw new ArgumentNullException(nameof(source));
         var journal = new RequestJournal(capacity);
         using var reader = new BinaryReader(source, Encoding.UTF8, leaveOpen: true);
-        if (reader.ReadInt32() != 1) throw new InvalidDataException("unsupported request journal snapshot version");
+        var version = reader.ReadInt32();
+        if (version != 1 && version != 2) throw new InvalidDataException("unsupported request journal snapshot version");
         var count = reader.ReadInt32();
         if (count < 0 || count > capacity) throw new InvalidDataException("request journal snapshot count exceeds capacity");
         for (var i = 0; i < count; i++)
@@ -287,6 +296,8 @@ public sealed class RequestJournal
             var requestId = reader.ReadString();
             var operation = reader.ReadString();
             var payloadHash = reader.ReadString();
+            var correlationId = version >= 2 ? reader.ReadString() : string.Empty;
+            var transactionId = version >= 2 ? reader.ReadString() : string.Empty;
             var state = (RequestJournalState)reader.ReadInt32();
             var created = new DateTime(reader.ReadInt64(), DateTimeKind.Utc);
             var completedTicks = reader.ReadInt64();
@@ -298,7 +309,7 @@ public sealed class RequestJournal
             if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(operation) || payloadHash.Length != 64 || !Enum.IsDefined(typeof(RequestJournalState), state))
                 throw new InvalidDataException("invalid request journal record");
             if (journal._records.ContainsKey(requestId)) throw new InvalidDataException("duplicate request journal id");
-            journal._records.Add(requestId, new RequestJournalRecord(requestId, operation, payloadHash, created)
+            journal._records.Add(requestId, new RequestJournalRecord(requestId, operation, payloadHash, created, EmptyToNull(correlationId), EmptyToNull(transactionId))
             {
                 State = state,
                 Failure = string.IsNullOrEmpty(failure) ? null : failure,
@@ -308,6 +319,8 @@ public sealed class RequestJournal
         }
         return journal;
     }
+
+    private static string? EmptyToNull(string value) => string.IsNullOrEmpty(value) ? null : value;
 
     public static string ComputePayloadHash(byte[]? payload)
     {

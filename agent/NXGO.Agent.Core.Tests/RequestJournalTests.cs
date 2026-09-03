@@ -158,13 +158,16 @@ public sealed class RequestJournalTests
     public void Snapshot_round_trips_terminal_result_and_rejects_truncation()
     {
         var journal = new RequestJournal();
-        journal.Admit("req-1", "part.save", Array.Empty<byte>());
+        journal.Admit("req-1", "part.save", Array.Empty<byte>(), "corr-1", "tx-1");
         journal.MarkStarted("req-1");
         journal.MarkCommitted("req-1", Encoding.UTF8.GetBytes("ok"));
         using var snapshot = new MemoryStream();
         journal.SaveSnapshot(snapshot);
         snapshot.Position = 0;
         var restored = RequestJournal.LoadSnapshot(snapshot);
+        Assert.True(restored.TryGet("req-1", out var restoredRecord));
+        Assert.Equal("corr-1", restoredRecord!.CorrelationId);
+        Assert.Equal("tx-1", restoredRecord.TransactionId);
         var replay = restored.Admit("req-1", "part.save", Array.Empty<byte>());
         Assert.Equal(RequestReplayDisposition.ReturnCommittedResult, replay.Disposition);
         Assert.Equal("ok", Encoding.UTF8.GetString(replay.Record.ResultEnvelope!));
