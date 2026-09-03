@@ -24,7 +24,7 @@ documents.
 | A-014 | open | local pipe security |
 | A-015 | open | release evidence and qualification |
 | A-016 | open | NX2512 C# Agent bootstrap |
-| F-017 | open | supervisor early-exit diagnostics |
+| F-017 | mitigated | supervisor early-exit diagnostics |
 
 The registry is authoritative for status. A finding marked `mitigated` is not
 release proof: the corresponding phase exit gate and retained evidence are

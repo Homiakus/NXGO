@@ -172,9 +172,10 @@ for a successful startup.
 
 Local remediation is implemented in `internal/supervisor/startup_failure.go`:
 the startup loop fails fast on the stable `Runtime error:` journal marker while
-retaining the normal timeout for silent/unresponsive startup. Real-NX
-reverification remains pending because A-016 still prevents a successful
-canonical Agent launch.
+retaining the normal timeout for silent/unresponsive startup. The targeted
+real-NX bootstrap test reverified this on 2026-09-03: the same A-016 failure
+returns in about 30 seconds rather than the prior 90-second startup timeout.
+A-016 still prevents a successful canonical Agent launch.
 
 ---
 
