@@ -591,7 +591,7 @@ Recommended initial contract:
 
 - [x] write a unit table for every geometry protocol field;
 - [x] replace magic UF unit conversions with named conversion functions/constants;
-- [ ] verify UF call parameter semantics against installed NX API docs/metadata;
+- [x] verify UF call parameter semantics against installed NX API docs/metadata;
 - [x] include returned unit metadata where ambiguity is possible;
 - [x] normalize `BoundingBox`, centroid, area, volume and mass consistently;
 - [x] implement `Part.MassProperties` over all applicable bodies;

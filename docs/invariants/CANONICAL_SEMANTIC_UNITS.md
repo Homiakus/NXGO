@@ -25,3 +25,9 @@ Mass is the value reported by the NX mass-properties query; NXGO does not
 derive or assume a material density. Density/material metadata is currently
 unavailable in the public contract and must be added explicitly before any
 mass conversion or material claim is exposed.
+
+The NX2512 installed managed metadata was inspected for `NXOpen.UF.UFModl`:
+`AskMassProps3d(Tag[], Int32, Int32, Int32, Double, Int32, Double[], Double[], Double[])`.
+The adapter passes the body tag, one body, solid type, the contract's UF mass
+units, unit scale `1.0`, accuracy mode, and the three NX output arrays in that
+order.
