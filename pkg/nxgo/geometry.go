@@ -35,6 +35,7 @@ type CylinderParams struct {
 }
 
 type MassProperties struct {
+	Units     string
 	Volume    float64
 	Area      float64
 	Mass      float64
@@ -43,6 +44,7 @@ type MassProperties struct {
 }
 
 type BoundingBox struct {
+	Units      string
 	MinCorner  Point3D
 	MaxCorner  Point3D
 	Dimensions Point3D
@@ -303,6 +305,7 @@ func (b *Body) MassProperties(ctx context.Context) (*MassProperties, error) {
 	}
 
 	return &MassProperties{
+		Units:     payload.Units,
 		Volume:    payload.Volume,
 		Area:      payload.Area,
 		Mass:      payload.Mass,
@@ -340,6 +343,7 @@ func (b *Body) BoundingBox(ctx context.Context) (*BoundingBox, error) {
 	}
 
 	return &BoundingBox{
+		Units:      payload.Units,
 		MinCorner:  payload.MinCorner,
 		MaxCorner:  payload.MaxCorner,
 		Dimensions: payload.Dimensions,

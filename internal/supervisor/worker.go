@@ -24,9 +24,6 @@ var (
 type AgentMode string
 
 const (
-	// AgentModeLegacy keeps the current production default until the compiled
-	// Core->NXHost path has retained E3 evidence on the pinned real-NX runner.
-	AgentModeLegacy AgentMode = "legacy"
 	// AgentModeCanonical launches the minimal run_journal bootstrap that loads
 	// NXGO.Agent.Core.dll + NXGO.Agent.NXHost.dll from AgentBin.
 	AgentModeCanonical AgentMode = "canonical"
@@ -120,6 +117,10 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		fmt.Sprintf("NXGO_PIPE_NAME=%s", cfg.PipeName),
 		fmt.Sprintf("UGII_BASE_DIR=%s", inst.Home),
 	)
+	if cfg.ArtifactDir != "" {
+		journalState := filepath.Join(cfg.ArtifactDir, "request-journal.bin")
+		cmd.Env = append(cmd.Env, fmt.Sprintf("NXGO_JOURNAL_STATE=%s", journalState))
+	}
 	if cfg.AgentBin != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("NXGO_AGENT_BIN=%s", cfg.AgentBin))
 	}
@@ -148,7 +149,7 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, cfg.PipeName)
-	client, err := waitForPipe(ctx, pipePath, cfg.StartupTimeout, waitDone)
+	client, err := waitForPipe(ctx, pipePath, cfg.StartupTimeout, waitDone, &outBuf)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = waitForWorkerExit(waitDone, 2*time.Second)
@@ -214,17 +215,10 @@ func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath str
 
 	mode := cfg.AgentMode
 	if mode == "" {
-		mode = AgentModeLegacy
+		mode = AgentModeCanonical
 	}
 
 	switch mode {
-	case AgentModeLegacy:
-		journalPath = filepath.Join(repoRoot, "agent", "bundle", "AgentWorker.cs")
-		if _, statErr := os.Stat(journalPath); statErr != nil {
-			return "", "", fmt.Errorf("legacy NX Agent journal unavailable: %w", statErr)
-		}
-		return journalPath, "", nil
-
 	case AgentModeCanonical:
 		journalPath = filepath.Join(repoRoot, "agent", "bundle", "CompiledHostBootstrap.cs")
 		if _, statErr := os.Stat(journalPath); statErr != nil {

@@ -336,6 +336,7 @@ type GeometryQueryMassPropertiesRequest struct {
 }
 
 type GeometryQueryMassPropertiesResponse struct {
+	Units     string     `json:"units"`
 	Volume    float64    `json:"volume"`
 	Area      float64    `json:"area"`
 	Mass      float64    `json:"mass"`
@@ -349,6 +350,7 @@ type GeometryQueryBoundingBoxRequest struct {
 }
 
 type GeometryQueryBoundingBoxResponse struct {
+	Units      string     `json:"units"`
 	MinCorner  [3]float64 `json:"min_corner"`
 	MaxCorner  [3]float64 `json:"max_corner"`
 	Dimensions [3]float64 `json:"dimensions"`

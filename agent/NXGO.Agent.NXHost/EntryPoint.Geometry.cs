@@ -31,7 +31,7 @@ public static partial class EntryPoint
             RequireMatchingPartUnits(payload, part);
             Journal.MarkStarted(requestId);
             using (var scope = new BuilderScope<NXOpen.Features.BlockFeatureBuilder>(
-                part.Features.CreateBlockFeatureBuilder(null),
+                part.Features.CreateBlockFeatureBuilder(null!),
                 b => { try { b.Destroy(); } catch { } }))
             {
                 var builder = scope.Builder;
@@ -84,7 +84,7 @@ public static partial class EntryPoint
             RequireMatchingPartUnits(payload, part);
             Journal.MarkStarted(requestId);
             using (var scope = new BuilderScope<NXOpen.Features.CylinderBuilder>(
-                part.Features.CreateCylinderBuilder(null),
+                part.Features.CreateCylinderBuilder(null!),
                 b => { try { b.Destroy(); } catch { } }))
             {
                 var builder = scope.Builder;
@@ -239,7 +239,12 @@ public static partial class EntryPoint
 
     private static Task<byte[]> StartObjectRelease(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
+        var leaseScopeId = GetString(payload, "lease_scope_id", "").Trim();
         var rawHandles = GetArray(payload, "handles");
+        if (leaseScopeId.Length > 0 && rawHandles.Length > 0)
+            throw new ArgumentException("object.release accepts lease_scope_id or handles, not both");
+        if (leaseScopeId.Length == 0 && rawHandles.Length == 0)
+            throw new ArgumentException("object.release requires lease_scope_id or handles");
         var handles = new List<ObjectHandleToken>();
         var identities = new HashSet<string>(StringComparer.Ordinal);
         foreach (var raw in rawHandles)
@@ -255,6 +260,12 @@ public static partial class EntryPoint
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
+            if (leaseScopeId.Length > 0)
+            {
+                Journal.MarkStarted(requestId); PersistJournalOrThrow();
+                var releasedByScope = Registry.ReleaseScope(leaseScopeId);
+                return FormatResponse(requestId, new Dictionary<string, object> { ["released_count"] = releasedByScope });
+            }
             foreach (var handle in handles)
             {
                 Registry.Resolve(handle);
@@ -271,7 +282,7 @@ public static partial class EntryPoint
 
     private static GeometryUnitContract ContractFor(Body body)
     {
-        var imperial = body.OwningPart != null && body.OwningPart.PartUnits == Part.Units.Inches;
+        var imperial = body.OwningPart != null && body.OwningPart.PartUnits == (BasePart.Units)Part.Units.Inches;
         return imperial ? GeometryUnitContract.InchPound : GeometryUnitContract.MillimeterKilogram;
     }
 

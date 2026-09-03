@@ -18,6 +18,10 @@
       <HintPath>$(NXGO_NX_MANAGED)\NXOpen.UF.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="NXOpen.Utilities">
+      <HintPath>$(NXGO_NX_MANAGED)\NXOpen.Utilities.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <Target Name="ValidateNxOpenPath" BeforeTargets="ResolveReferences">
     <Error Condition="'$(NXGO_NX_MANAGED)' == ''" Text="NXGO_NX_MANAGED must point to the installed NX managed/NXOpen assembly directory." />

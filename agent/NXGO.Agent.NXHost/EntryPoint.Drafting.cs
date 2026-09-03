@@ -66,6 +66,7 @@ public static partial class EntryPoint
             }
             Journal.MarkStarted(requestId);
 
+#pragma warning disable CS0618
             var sheet = part.DrawingSheets.InsertSheet(
                 sheetName,
                 sheetUnit,
@@ -74,6 +75,7 @@ public static partial class EntryPoint
                 numerator,
                 denominator,
                 DrawingSheet.ProjectionAngleType.FirstAngle);
+#pragma warning restore CS0618
 
             var handle = Registry.Register(
                 sheet,

@@ -9,7 +9,7 @@
         "internal/objectref/objectref_test.go",
         "internal/objectref/objectref_fuzz_test.go",
         "pkg/nxgo/part.go",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "tests/nx/agent_smoke_test.go"
       ]
     },
@@ -23,7 +23,7 @@
         "internal/protocol/messages_test.go",
         "agent/NXGO.Agent.Core/SessionHealth.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "pkg/nxgo/session.go"
       ],
       "note": "Go and Agent-core state machines refuse reuse of non-healthy sessions; protocol ErrorEnvelope enforces healthy/dirty/lost taxonomy. Real NX fatal/modeler classification and supervisor kill/restart evidence are verified."
@@ -34,7 +34,7 @@
       "mechanisms": [
         "internal/protocol/messages.go",
         "internal/protocol/messages_test.go",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "pkg/nxgo/session.go"
       ],
       "note": "Protocol ErrorEnvelope explicitly categorizes errors (InvalidArgument, NXException, SessionDirty, SessionLost, Timeout, Cancelled, Internal) with recoverability and session health."
@@ -49,7 +49,7 @@
         "agent/NXGO.Agent.Core/NamedPipeRequestServer.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
         "agent/NXGO.Agent.NXHost/EntryPoint.cs",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "tests/nx/agent_smoke_test.go"
       ],
       "note": "Transport work is queued and only a bound execution thread may drain it. Dedicated-worker NX host binds/drains on its entry thread; validated directly on real NX 2512."
@@ -60,7 +60,7 @@
       "mechanisms": [
         "agent/NXGO.Agent.Core/NxExecutor.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
-        "agent/bundle/AgentWorker.cs"
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs"
       ],
       "note": "Naive mutex execution is avoided and wrong-thread draining is rejected. Explicit NX callback reentrancy/call-depth policy is pending."
     },
@@ -70,7 +70,7 @@
       "mechanisms": [
         "agent/NXGO.Agent.Core/BuilderScope.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "pkg/nxgo/transaction.go",
         "tests/nx/agent_smoke_test.go"
       ],
@@ -82,7 +82,7 @@
       "mechanisms": [
         "agent/NXGO.Agent.Core/BuilderScope.cs",
         "agent/NXGO.Agent.Core.Tests/AgentCoreTests.cs",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "pkg/nxgo/transaction.go"
       ],
       "note": "CommitOnce rejects a second commit attempt on the same BuilderScope. Real NX undo-mark transaction commit/rollback validated on live NX 2512."
@@ -108,7 +108,7 @@
         "internal/objectref/objectref.go",
         "internal/objectref/objectref_test.go",
         "pkg/nxgo/part.go",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "tests/nx/agent_smoke_test.go"
       ]
     },
@@ -168,7 +168,7 @@
         "tests/nx/smoke.py",
         "tests/nx/agent_smoke_test.go",
         "internal/supervisor/worker.go",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "scripts/build-agent.ps1"
       ],
       "note": "Real-NX fail-closed smoke, live NX 2512 Agent bootstrap, bound-thread query, ObjectRegistry, Undo transactions, and Part lifecycle verified over named pipes on pinned host."
@@ -190,7 +190,7 @@
         "pkg/nxgo/assembly.go",
         "pkg/nxgo/drafting.go",
         "pkg/nxgo/workflow.go",
-        "agent/bundle/AgentWorker.cs",
+        "agent/NXGO.Agent.NXHost/EntryPoint.cs",
         "tests/nx/geometry_test.go",
         "tests/nx/assembly_test.go",
         "tests/nx/drafting_test.go",

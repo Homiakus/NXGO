@@ -125,6 +125,7 @@ public static partial class EntryPoint
             var part = (Part)Registry.Resolve(partHandle, "Part");
             var remaining = MaxAssemblySnapshotNodes;
             var root = part.ComponentAssembly != null ? part.ComponentAssembly.RootComponent : null;
+            if (root == null) throw new InvalidOperationException("assembly root component is unavailable");
             return FormatResponse(requestId, new Dictionary<string, object>
             {
                 ["root"] = SerializeComponentSnapshot(root, 0, ref remaining),
@@ -147,6 +148,7 @@ public static partial class EntryPoint
             var groups = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
             var remaining = MaxAssemblySnapshotNodes;
             var root = part.ComponentAssembly != null ? part.ComponentAssembly.RootComponent : null;
+            if (root == null) throw new InvalidOperationException("assembly root component is unavailable");
             CollectBOMSnapshot(root, groups, 0, ref remaining);
 
             var keys = new List<string>(groups.Keys);

@@ -3,6 +3,7 @@ package supervisor
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -13,18 +14,22 @@ var canonicalRuntimeDLLs = []string{
 	"NXGO.Agent.NXHost.dll",
 }
 
-func TestResolveWorkerAgentPathsDefaultsToLegacy(t *testing.T) {
+func TestResolveWorkerAgentPathsDefaultsToCanonical(t *testing.T) {
 	root := createAgentLayout(t, true)
 	journal, agentBin, err := resolveWorkerAgentPaths(WorkerConfig{}, root)
 	if err != nil {
-		t.Fatalf("resolve legacy default: %v", err)
+		t.Fatalf("resolve canonical default: %v", err)
 	}
-	want := filepath.Join(root, "agent", "bundle", "AgentWorker.cs")
+	want := filepath.Join(root, "agent", "bundle", "CompiledHostBootstrap.cs")
 	if journal != want {
-		t.Fatalf("legacy journal mismatch: got %q want %q", journal, want)
+		t.Fatalf("canonical journal mismatch: got %q want %q", journal, want)
 	}
-	if agentBin != "" {
-		t.Fatalf("legacy mode unexpectedly selected AgentBin %q", agentBin)
+	wantBin, err := filepath.Abs(filepath.Join(root, "agent", "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agentBin != wantBin {
+		t.Fatalf("canonical default AgentBin mismatch: got %q want %q", agentBin, wantBin)
 	}
 }
 
@@ -104,6 +109,14 @@ func TestResolveWorkerAgentPathsRejectsUnknownMode(t *testing.T) {
 	}
 }
 
+func TestWorkerJournalStatePathUsesArtifactDirectory(t *testing.T) {
+	artifactDir := filepath.Join("e:", "nxgo", "artifacts")
+	got := filepath.Join(artifactDir, "request-journal.bin")
+	if filepath.Base(got) != "request-journal.bin" || !strings.Contains(got, "artifacts") {
+		t.Fatalf("invalid journal state path: %q", got)
+	}
+}
+
 func createAgentLayout(t *testing.T, withDLLs bool) string {
 	t.Helper()
 	root := t.TempDir()
@@ -116,7 +129,6 @@ func createAgentLayout(t *testing.T, withDLLs bool) string {
 		t.Fatal(err)
 	}
 	for _, file := range []string{
-		filepath.Join(bundle, "AgentWorker.cs"),
 		filepath.Join(bundle, "CompiledHostBootstrap.cs"),
 	} {
 		if err := os.WriteFile(file, []byte("// fixture"), 0o644); err != nil {
