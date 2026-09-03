@@ -329,6 +329,8 @@ public sealed class RequestJournal
                 CompletedAtUtc = completedTicks == 0 ? null : new DateTime(completedTicks, DateTimeKind.Utc),
             });
         }
+        if (source.CanSeek && source.Position != source.Length)
+            throw new InvalidDataException("request journal snapshot contains trailing data");
         return journal;
     }
 

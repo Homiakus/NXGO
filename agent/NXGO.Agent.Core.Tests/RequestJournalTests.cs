@@ -192,6 +192,17 @@ public sealed class RequestJournalTests
     }
 
     [Fact]
+    public void Snapshot_rejects_trailing_data()
+    {
+        var journal = new RequestJournal();
+        journal.Admit("req-1", "part.save", Array.Empty<byte>());
+        using var snapshot = new MemoryStream();
+        journal.SaveSnapshot(snapshot);
+        snapshot.WriteByte(0x7f);
+        Assert.Throws<InvalidDataException>(() => RequestJournal.LoadSnapshot(new MemoryStream(snapshot.ToArray())));
+    }
+
+    [Fact]
     public void Atomic_store_replaces_snapshot_and_loads_it()
     {
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nxgo-journal-" + Guid.NewGuid().ToString("N"), "journal.bin");
