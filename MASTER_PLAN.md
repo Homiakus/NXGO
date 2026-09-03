@@ -623,7 +623,7 @@ Recommended initial contract:
 - [x] `Close(save=true)` returns error and leaves state diagnosable when save fails;
 - [ ] separate `Close`, `Save`, `SaveAs`, `ForceCloseDiscard` semantics;
 - [ ] stage externally published files before atomic publish where possible;
-- [ ] validate output exists/non-zero and matches intended part/sheet before reporting success;
+- [x] validate output exists/non-zero and matches intended part/sheet before reporting success;
 - [ ] propagate PartLoadStatus/PartSaveStatus diagnostics.
 
 ## Independent semantic oracles
