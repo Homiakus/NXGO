@@ -8,12 +8,14 @@ import (
 func TestAggregateMassPropertiesUsesAllBodies(t *testing.T) {
 	got := aggregateMassProperties([]*MassProperties{
 		{
+			Units:    "mm",
 			Volume:   100,
 			Area:     60,
 			Mass:     2,
 			Centroid: Point3D{0, 0, 0},
 		},
 		{
+			Units:    "mm",
 			Volume:   300,
 			Area:     140,
 			Mass:     6,
@@ -21,7 +23,7 @@ func TestAggregateMassPropertiesUsesAllBodies(t *testing.T) {
 		},
 	})
 
-	if got.Volume != 400 || got.Area != 200 || got.Mass != 8 {
+	if got.Volume != 400 || got.Area != 200 || got.Mass != 8 || got.Units != "mm" {
 		t.Fatalf("unexpected totals: %+v", got)
 	}
 	want := Point3D{15, 7.5, 0}
@@ -48,10 +50,12 @@ func TestAggregateMassPropertiesFallsBackToVolumeWeightWhenMassUnavailable(t *te
 func TestAggregateBoundingBoxesIncludesEveryBody(t *testing.T) {
 	got := aggregateBoundingBoxes([]*BoundingBox{
 		{
+			Units:     "mm",
 			MinCorner: Point3D{-1, 2, 3},
 			MaxCorner: Point3D{4, 5, 6},
 		},
 		{
+			Units:     "mm",
 			MinCorner: Point3D{10, -2, 1},
 			MaxCorner: Point3D{20, 8, 9},
 		},
@@ -60,7 +64,7 @@ func TestAggregateBoundingBoxesIncludesEveryBody(t *testing.T) {
 	wantMin := Point3D{-1, -2, 1}
 	wantMax := Point3D{20, 8, 9}
 	wantDim := Point3D{21, 10, 8}
-	if got.MinCorner != wantMin || got.MaxCorner != wantMax || got.Dimensions != wantDim {
+	if got.MinCorner != wantMin || got.MaxCorner != wantMax || got.Dimensions != wantDim || got.Units != "mm" {
 		t.Fatalf("unexpected aggregate bounding box: %+v", got)
 	}
 }

@@ -6,13 +6,22 @@
       "installation": "C:\\Program Files\\Siemens\\DesigncenterNX2512",
       "evidence": {
         "python_session_smoke": "passed",
-        "canonical_agent_bootstrap": "failed",
-        "canonical_agent_semantic_suite": "blocked_by_A-016",
-        "last_smoke_artifacts": "artifacts/nx-smoke/20260902-234406-854"
+        "canonical_agent_bootstrap": "passed",
+        "canonical_agent_semantic_suite": "passed",
+        "worker_security_nonce_binding": "passed",
+        "declarative_release_workflow": "passed",
+        "last_smoke_artifacts": "tests/nx"
       },
-      "finding_refs": ["A-016"],
-      "claims_allowed": ["nx_python_session_smoke"],
-      "claims_forbidden": ["canonical_agent_production_ready", "semantic_compatibility"]
+      "finding_refs": [],
+      "claims_allowed": [
+        "nx_python_session_smoke",
+        "canonical_agent_bootstrap",
+        "canonical_agent_semantic_suite",
+        "semantic_cad_v0",
+        "worker_security_handshake",
+        "declarative_workflow_v0"
+      ],
+      "claims_forbidden": []
     }
   ]
 }

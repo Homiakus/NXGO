@@ -134,14 +134,19 @@ func PrepareReleasePackage(ctx context.Context, session *Session, params Release
 		Status:           "VERIFIED_RELEASE",
 	}
 
-	// 6. Write Manifest to Disk
+	// 6. Stage and atomically write Manifest to Disk
 	manifestPath := filepath.Join(params.OutputDir, rawName+"_manifest.json")
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal manifest: %w", err)
 	}
-	if err := os.WriteFile(manifestPath, manifestBytes, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write manifest: %w", err)
+	tmpManifestPath := manifestPath + ".tmp"
+	if err := os.WriteFile(tmpManifestPath, manifestBytes, 0644); err != nil {
+		return nil, fmt.Errorf("failed to write staged manifest: %w", err)
+	}
+	if err := os.Rename(tmpManifestPath, manifestPath); err != nil {
+		_ = os.Remove(tmpManifestPath)
+		return nil, fmt.Errorf("failed to atomically publish manifest: %w", err)
 	}
 
 	return manifest, nil

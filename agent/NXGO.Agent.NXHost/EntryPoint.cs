@@ -50,6 +50,8 @@ public static partial class EntryPoint
         ["drafting.create_sheet"] = MutationOutcomeClass.Transactional, ["drafting.export_pdf"] = MutationOutcomeClass.Transactional,
     };
     private static volatile bool _shutdownRequested;
+    private static volatile bool _authenticated;
+    private static readonly string? ExpectedNonce = Environment.GetEnvironmentVariable("NXGO_WORKER_NONCE");
 
     public static string RuntimeAssemblyIdentity()
     {
@@ -76,7 +78,10 @@ public static partial class EntryPoint
         }
 
         Program.WriteDiagnostic($"NXGO: starting pipe server on {pipeName}...");
-        using (var server = new NamedPipeRequestServer(pipeName!, (payload, token) => HandleRequest(session, executor, payload, token)))
+        using (var server = new NamedPipeRequestServer(
+            pipeName!,
+            (payload, token) => HandleRequest(session, executor, payload, token),
+            () => { _authenticated = false; }))
         {
             session.LogFile.WriteLine($"[NXGO] canonical NXHost start pipe={pipeName} protocol={ProtocolMajor}.{ProtocolMinor}");
             server.Start();
@@ -144,12 +149,22 @@ public static partial class EntryPoint
                 {
                     return Task.FromResult(FormatError(string.Empty, "INVALID_ARGUMENT", "invalid handshake", false));
                 }
+                if (!string.IsNullOrWhiteSpace(ExpectedNonce) && !string.Equals(handshake.Nonce, ExpectedNonce, StringComparison.Ordinal))
+                {
+                    return Task.FromResult(FormatError(string.Empty, "UNAUTHORIZED", "handshake nonce mismatch: unauthorized client", false));
+                }
+                _authenticated = true;
                 return Task.FromResult(FormatHandshake(session));
             }
             catch (Exception ex)
             {
                 return Task.FromResult(FormatError(string.Empty, "INVALID_ARGUMENT", "invalid handshake: " + ex.Message, false));
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(ExpectedNonce) && !_authenticated)
+        {
+            return Task.FromResult(FormatError(probe.RequestId ?? string.Empty, "UNAUTHORIZED", "worker authentication required: must handshake with valid nonce first", false));
         }
 
         RequestEnvelopeDto request;
@@ -339,6 +354,7 @@ public static partial class EntryPoint
         }
         var unitsText = GetString(payload, "units", "mm");
         var units = string.Equals(unitsText, "in", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(unitsText, "inch", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(unitsText, "inches", StringComparison.OrdinalIgnoreCase)
             ? Part.Units.Inches
             : Part.Units.Millimeters;
@@ -383,13 +399,23 @@ public static partial class EntryPoint
     private static Task<byte[]> StartPartSave(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var handle = RequireHandle(payload, "part_ref", "Part");
+        var saveAsPath = GetString(payload, "path", string.Empty);
 
         return MapMutation(requestId, executor.EnqueueTracked(() =>
         {
             Health.RequireReusable();
             var part = (Part)Registry.Resolve(handle, "Part");
             Journal.MarkStarted(requestId); PersistJournalOrThrow();
-            part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
+            PartSaveStatus? saveStatus;
+            if (!string.IsNullOrWhiteSpace(saveAsPath))
+            {
+                saveStatus = part.SaveAs(saveAsPath);
+            }
+            else
+            {
+                saveStatus = part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
+            }
+            CheckAndDisposeSaveStatus(saveStatus);
             return FormatResponse(requestId, new Dictionary<string, object>
             {
                 ["saved"] = true,
@@ -412,7 +438,8 @@ public static partial class EntryPoint
             var name = part.Name;
             if (save)
             {
-                part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
+                var saveStatus = part.Save(BasePart.SaveComponents.True, BasePart.CloseAfterSave.False);
+                CheckAndDisposeSaveStatus(saveStatus);
             }
             part.Close(BasePart.CloseWholeTree.False, BasePart.CloseModified.CloseModified, null!);
             Registry.ReleaseWithDependents(handle);
@@ -422,6 +449,27 @@ public static partial class EntryPoint
                 ["name"] = name,
             });
         }, token));
+    }
+
+    private static void CheckAndDisposeSaveStatus(PartSaveStatus? saveStatus)
+    {
+        if (saveStatus == null) return;
+        try
+        {
+            if (saveStatus.NumberUnsavedParts > 0)
+            {
+                var errCode = saveStatus.GetStatus(0);
+                if (errCode != 0)
+                {
+                    throw NXOpen.NXException.Create(errCode);
+                }
+                throw new InvalidOperationException("part save failed with unsaved parts count=" + saveStatus.NumberUnsavedParts);
+            }
+        }
+        finally
+        {
+            saveStatus.Dispose();
+        }
     }
 
     private static Task<byte[]> StartPartSummary(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)

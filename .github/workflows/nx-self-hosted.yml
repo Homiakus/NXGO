@@ -33,6 +33,7 @@ jobs:
             throw 'NXGO_NX_HOME is required for the real-NX gate.'
           }
           $candidates = @(
+            (Join-Path $env:NXGO_NX_HOME 'NXBIN\managed_core'),
             (Join-Path $env:NXGO_NX_HOME 'NXBIN\managed'),
             (Join-Path $env:NXGO_NX_HOME 'UGII\managed')
           )

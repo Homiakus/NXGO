@@ -363,6 +363,9 @@ func aggregateMassProperties(items []*MassProperties) *MassProperties {
 		if item == nil {
 			continue
 		}
+		if result.Units == "" && item.Units != "" {
+			result.Units = item.Units
+		}
 		result.Volume += item.Volume
 		result.Area += item.Area
 		result.Mass += item.Mass
@@ -399,6 +402,9 @@ func aggregateBoundingBoxes(boxes []*BoundingBox) *BoundingBox {
 			continue
 		}
 		seen = true
+		if result.Units == "" && box.Units != "" {
+			result.Units = box.Units
+		}
 		for axis := 0; axis < 3; axis++ {
 			result.MinCorner[axis] = math.Min(result.MinCorner[axis], box.MinCorner[axis])
 			result.MaxCorner[axis] = math.Max(result.MaxCorner[axis], box.MaxCorner[axis])

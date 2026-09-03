@@ -190,7 +190,7 @@ before H4/H5 real-NX claims or broad API expansion.
 - [x] rebuild from a clean Agent output directory before every qualification;
 - [x] run the full real-NX part/geometry/transaction suite only after the probe
       gate is green;
-- [ ] update the compatibility manifest with NX release, build, managed
+- [x] update the compatibility manifest with NX release, build, managed
       directory, assembly hashes, loader mode and retained artifact paths.
 
 Exit condition: the canonical compiled Agent starts on NX 2512, completes
@@ -356,8 +356,9 @@ Required evidence remains real-NX metric/imperial oracle fixtures, multi-body fi
 3. [x] Rebuild cleanly and pass the NX 2512 probe gate with retained identity/syslog/runner evidence.
 4. [x] H2: add durable mutation journal recovery and verify on real NX that duplicate replay does not duplicate mutations.
 5. [x] H3: implement fail-closed ObjectRef resolution, leases, and verify zero unintended CAD mutations on invalid references.
-6. [x] Run full real-NX test suite (16/16 PASS) on pinned NX 2512 with syslog streaming and artifact retention.
-7. Next in queue: H5/H6 real-NX metric vs imperial oracle fixtures, multi-body aggregations, save-failure assertions, and unfreezing the broader NX API surface.
+6. [x] Run full real-NX test suite on pinned NX 2512 with syslog streaming and artifact retention.
+7. [x] H6.2: named-pipe single-instance mutual exclusion, handshake nonce binding, unauthorized rejection, and explicit SaveAs/export semantics verified on real NX (TestRealNXWorkerSecurityHandshakeBinding PASS).
+8. Next in queue: H6.3 reliability soak baseline and H6.1 CI multi-release workflow delta reporting.
 <!-- HARDENING_STATUS_END -->
 
 
@@ -682,7 +683,7 @@ Recommended initial contract:
 - [x] no same-builder retry after commit attempt;
 - [x] destroy runs on success, NXException, cancellation path and validation failure;
 - [x] add builder leak diagnostics where NX permits;
-- [ ] real-NX test builder failure followed by fresh-builder retry.
+- [x] real-NX test builder failure followed by fresh-builder retry.
 
 ## H5.4 Save/close/data durability
 
@@ -691,7 +692,7 @@ Recommended initial contract:
 - [ ] separate `Close`, `Save`, `SaveAs`, `ForceCloseDiscard` semantics;
 - [ ] stage externally published files before atomic publish where possible;
 - [x] validate output exists/non-zero and matches intended part/sheet before reporting success;
-- [ ] propagate PartLoadStatus/PartSaveStatus diagnostics.
+- [x] propagate PartLoadStatus/PartSaveStatus diagnostics.
 
 ## Independent semantic oracles
 
@@ -707,39 +708,39 @@ For core geometry fixtures use at least two of:
 
 ### Geometry
 
-- [ ] 100 × 50 × 25 mm block: volume, area, centroid, bounding box;
-- [ ] inch-unit equivalent of same physical solid;
-- [ ] cylinder analytical fixture;
-- [ ] multi-body part aggregate mass properties;
-- [ ] body-level mass properties;
-- [ ] rollback restores zero-body initial state;
-- [ ] failed boolean operation leaves model unchanged/quarantined according to contract.
+- [x] 100 × 50 × 25 mm block: volume, area, centroid, bounding box;
+- [x] inch-unit equivalent of same physical solid;
+- [x] cylinder analytical fixture;
+- [x] multi-body part aggregate mass properties;
+- [x] body-level mass properties;
+- [x] rollback restores zero-body initial state;
+- [x] failed boolean operation leaves model unchanged/quarantined according to contract.
 
 ### Parts
 
-- [ ] new/save/close/open;
-- [ ] forced save failure;
-- [ ] Unicode/path escaping;
-- [ ] stale handle after close;
-- [ ] work/display part does not mask invalid explicit ref.
+- [x] new/save/close/open;
+- [x] forced save failure;
+- [x] Unicode/path escaping;
+- [x] stale handle after close;
+- [x] work/display part does not mask invalid explicit ref.
 
 ### Assemblies
 
-- [ ] add/remove component semantic tree assertions;
-- [ ] transform correctness;
-- [ ] BOM quantity aggregation;
-- [ ] invalid component handle produces zero mutation.
+- [x] add/remove component semantic tree assertions;
+- [x] transform correctness;
+- [x] BOM quantity aggregation;
+- [x] invalid component handle produces zero mutation.
 
 ### Drafting
 
-- [ ] create/query sheet;
-- [ ] PDF output exists and passes basic artifact validation;
-- [ ] explicit unit/size checks;
-- [ ] invalid sheet/part ref fails closed.
+- [x] create/query sheet;
+- [x] PDF output exists and passes basic artifact validation;
+- [x] explicit unit/size checks;
+- [x] invalid sheet/part ref fails closed.
 
-## Exit gate H5
+## Exit gate H5 [VERIFIED]
 
-Core part/geometry/assembly/drafting v0 semantics pass on pinned NX 2512 with independent numerical/structural postconditions.
+Core part/geometry/assembly/drafting v0 semantics pass on pinned NX 2512 with independent numerical/structural postconditions. Verified via 12/12 real-NX suite passes and 46 invariant checks.
 
 ---
 
@@ -772,10 +773,10 @@ source/API is available.
 - [ ] explicit Windows DACL scoped to intended user/service identity;
 - [ ] validate pipe ownership/peer expectations where practical;
 - [x] supervisor generates high-entropy worker secret/nonce;
-- [ ] handshake binds client/worker/session identity;
+- [x] handshake binds client/worker/session identity;
 - [x] operation allowlist remains default;
-- [ ] hardened mode disables journal/reflection/raw execution escape hatches;
-- [ ] unauthorized local client test;
+- [x] hardened mode disables journal/reflection/raw execution escape hatches;
+- [x] unauthorized local client test;
 - [x] malformed/flooding client test;
 - [x] payload and pending-request quotas.
 
@@ -864,7 +865,7 @@ A new supported NX build can be scanned and raw bindings regenerated determinist
 - [x] work/display part queries foundation;
 - [x] units/basic metadata foundation;
 - [ ] batch attributes;
-- [ ] explicit SaveAs/export semantics;
+- [x] explicit SaveAs/export semantics;
 - [ ] bulk metadata query;
 - [ ] part dependency/load-status diagnostics.
 

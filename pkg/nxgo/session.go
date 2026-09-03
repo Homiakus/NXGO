@@ -34,10 +34,31 @@ type Session struct {
 	nxRelease    string
 }
 
-func Connect(ctx context.Context, pipePath string) (*Session, error) {
+type ConnectOption func(*connectOptions)
+
+type connectOptions struct {
+	nonce string
+}
+
+func WithNonce(nonce string) ConnectOption {
+	return func(o *connectOptions) {
+		o.nonce = nonce
+	}
+}
+
+func Connect(ctx context.Context, pipePath string, opts ...ConnectOption) (*Session, error) {
 	conn, err := pipe.DialPipe(ctx, pipePath)
 	if err != nil {
 		return nil, fmt.Errorf("dial NX pipe: %w", err)
+	}
+
+	var options connectOptions
+	for _, opt := range opts {
+		opt(&options)
+	}
+	nonce := options.nonce
+	if nonce == "" {
+		nonce = newHandshakeNonce()
 	}
 
 	client := pipe.NewClient(conn)
@@ -45,7 +66,7 @@ func Connect(ctx context.Context, pipePath string) (*Session, error) {
 		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
 		SDKVersion:      "v0.1.0",
 		ClientPID:       os.Getpid(),
-		Nonce:           newHandshakeNonce(),
+		Nonce:           nonce,
 	})
 	if err != nil {
 		_ = client.Close()

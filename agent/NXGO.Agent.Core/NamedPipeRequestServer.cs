@@ -10,15 +10,17 @@ public sealed class NamedPipeRequestServer : IDisposable
 {
     private readonly string _pipeName;
     private readonly Func<byte[], CancellationToken, Task<byte[]>> _handler;
+    private readonly Action? _onDisconnected;
     private readonly CancellationTokenSource _shutdown = new CancellationTokenSource();
     private Task? _loop;
     private NamedPipeServerStream? _activeServer;
 
-    public NamedPipeRequestServer(string pipeName, Func<byte[], CancellationToken, Task<byte[]>> handler)
+    public NamedPipeRequestServer(string pipeName, Func<byte[], CancellationToken, Task<byte[]>> handler, Action? onDisconnected = null)
     {
         if (string.IsNullOrWhiteSpace(pipeName)) throw new ArgumentException("pipe name is required", nameof(pipeName));
         _pipeName = pipeName;
         _handler = handler ?? throw new ArgumentNullException(nameof(handler));
+        _onDisconnected = onDisconnected;
     }
 
     public Task Completion => _loop ?? Task.CompletedTask;
@@ -65,6 +67,7 @@ public sealed class NamedPipeRequestServer : IDisposable
                 finally
                 {
                     _activeServer = null;
+                    try { _onDisconnected?.Invoke(); } catch { }
                 }
             }
         }

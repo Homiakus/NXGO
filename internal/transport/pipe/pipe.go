@@ -2,6 +2,7 @@ package pipe
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -232,6 +233,12 @@ func (c *Client) Handshake(ctx context.Context, req *protocol.HandshakeRequest) 
 			return nil, fmt.Errorf("receive handshake: %w", res.err)
 		}
 		respBytes = res.payload
+	}
+
+	var errEnv protocol.ResponseEnvelope
+	if err := json.Unmarshal(respBytes, &errEnv); err == nil && errEnv.Status == protocol.StatusError && errEnv.Error != nil {
+		c.quarantine(fmt.Errorf("%w: server rejected handshake: %s: %s", ErrHandshakeFailed, errEnv.Error.Category, errEnv.Error.Message))
+		return nil, fmt.Errorf("%w: [%s] %s", ErrHandshakeFailed, errEnv.Error.Category, errEnv.Error.Message)
 	}
 
 	resp, err := protocol.DecodePayload[protocol.HandshakeResponse](respBytes)

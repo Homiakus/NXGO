@@ -41,6 +41,7 @@ type WorkerConfig struct {
 	RunnerPath     string
 	TargetPath     string
 	StartupTimeout time.Duration
+	WorkerNonce    string
 }
 
 type WorkerProcess struct {
@@ -133,6 +134,14 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		cfg.RunnerPath = command
 	}
 
+	if cfg.WorkerNonce == "" {
+		nonce, nonceErr := newWorkerNonce()
+		if nonceErr != nil {
+			return nil, fmt.Errorf("generate worker handshake nonce: %w", nonceErr)
+		}
+		cfg.WorkerNonce = nonce
+	}
+
 	cmd := exec.Command(command, commandArgs...)
 	// Siemens' managed_core runner resolves NX native libraries relative to
 	// NXBIN. Starting it from the repository/agent output directory can load
@@ -140,6 +149,7 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	cmd.Dir = filepath.Join(inst.Home, "NXBIN")
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("NXGO_PIPE_NAME=%s", cfg.PipeName),
+		fmt.Sprintf("NXGO_WORKER_NONCE=%s", cfg.WorkerNonce),
 		fmt.Sprintf("UGII_BASE_DIR=%s", inst.Home),
 		fmt.Sprintf("UGII_NXBIN=%s", filepath.Join(inst.Home, "NXBIN")),
 		fmt.Sprintf("UGII_ROOT_DIR=%s", inst.Home),
@@ -207,16 +217,11 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	})
 
 	// Perform handshake.
-	nonce, err := newWorkerNonce()
-	if err != nil {
-		_ = wp.Kill()
-		return nil, fmt.Errorf("generate worker handshake nonce: %w", err)
-	}
 	hsResp, err := client.Handshake(ctx, &protocol.HandshakeRequest{
 		ProtocolVersion: protocol.Version{Major: protocol.CurrentProtocolMajor, Minor: protocol.CurrentProtocolMinor},
 		SDKVersion:      "v0.1.0",
 		ClientPID:       os.Getpid(),
-		Nonce:           nonce,
+		Nonce:           cfg.WorkerNonce,
 	})
 	if err != nil {
 		_ = wp.Kill()
