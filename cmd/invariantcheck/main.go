@@ -109,6 +109,19 @@ func verifyReleaseEvidence() error {
 			return fmt.Errorf("release %s has no evidence", release.Release)
 		}
 		for _, claim := range release.ClaimsAllowed {
+			lowerClaim := strings.ToLower(claim)
+			if strings.Contains(lowerClaim, "production") || strings.Contains(lowerClaim, "compatibility") || strings.Contains(lowerClaim, "semantic") {
+				matched := false
+				for _, status := range release.Evidence {
+					if strings.EqualFold(status, "passed") {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					return fmt.Errorf("release %s allows claim %q without passed evidence", release.Release, claim)
+				}
+			}
 			for _, forbidden := range release.ClaimsForbidden {
 				if claim == forbidden {
 					return fmt.Errorf("release %s both allows and forbids claim %q", release.Release, claim)
