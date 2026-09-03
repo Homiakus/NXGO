@@ -593,7 +593,7 @@ Recommended initial contract:
 - [x] replace magic UF unit conversions with named conversion functions/constants;
 - [ ] verify UF call parameter semantics against installed NX API docs/metadata;
 - [x] include returned unit metadata where ambiguity is possible;
-- [ ] normalize `BoundingBox`, centroid, area, volume and mass consistently;
+- [x] normalize `BoundingBox`, centroid, area, volume and mass consistently;
 - [x] implement `Part.MassProperties` over all applicable bodies;
 - [x] expose body-level and part-level mass properties as separate semantics;
 - [ ] define behavior for sheet bodies/non-solid bodies/mixed parts;
@@ -606,7 +606,7 @@ Recommended initial contract:
 - [x] implement/reject `TargetBodyRef` deterministically;
 - [x] validate dimensions/direction vectors before creating NX builders;
 - [x] normalize zero/negative/tolerance edge cases;
-- [ ] add semantic postconditions after builder commit;
+- [x] add semantic postconditions after builder commit;
 - [ ] integrate required UpdateManager/update semantics per operation recipe.
 
 ## H5.3 Builder lifecycle
