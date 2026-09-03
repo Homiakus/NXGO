@@ -301,7 +301,7 @@ Target evidence: `E1 → E2`
 
 ## Tasks
 
-- [ ] record the audit findings A-001..A-015 in the invariant/ADR system where applicable;
+- [x] record the audit findings A-001..A-015 in the invariant/ADR system where applicable;
 - [x] add an `AUDIT_FINDING` or equivalent reference field to remediation tests/commits;
 - [x] change completion language in docs so simulated evidence and real-NX evidence cannot be conflated;
 - [x] capture current protocol fixtures and golden frames before refactoring;
