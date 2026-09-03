@@ -163,6 +163,41 @@ On 2026-09-03 a controlled experiment acquired `Session` in the journal bootstra
 
 The same canonical smoke was rerun with the installed NX2512 GUI process already live (`ugraf.exe`, 2026-09-03). It failed identically in `Session.GetSession()` after 26.7 seconds, ruling out the absence of a running NX session as the cause.
 
+#### A-016 remediation plan — NX 2512 load-context isolation
+
+This is a release-blocking execution-kernel workstream. It must be completed
+before H4/H5 real-NX claims or broad API expansion.
+
+- [x] retain a minimal C# journal probe which calls only `Session.GetSession()`;
+- [x] prove the minimal C# journal succeeds on the installed NX 2512;
+- [x] prove the failure occurs only after loading `NXGO.Agent.NXHost.dll`;
+- [x] test both `Assembly.Load(byte[])` and `Assembly.LoadFrom` and retain the
+      resulting diagnostics;
+- [x] identify the exact NX 2512 loader contract for `managed` versus
+      `managed_core` and `NXOpenLoadContext.dll`;
+- [x] select one supported entry architecture: statically compiled journal
+      adapter, NX-provided managed entrypoint, or a separately hosted process
+      with an explicit NX callback bridge;
+- [x] implement the selected architecture without reflection-based execution
+      of NXOpen-dependent code across load contexts;
+- [x] keep Protocol/Core NX-independent and pass only opaque transport/runtime
+      dependencies across the adapter boundary;
+- [x] add a no-NX contract test for bootstrap argument/diagnostic behavior;
+- [x] add a real-NX probe gate: `Session.GetSession`, `nx.ping`, `session.info`,
+      clean shutdown, retained syslog, runner output and identity manifest;
+- [x] add a real-NX negative test proving the old dynamic-loader path is not
+      selected for NX 2512;
+- [x] rebuild from a clean Agent output directory before every qualification;
+- [x] run the full real-NX part/geometry/transaction suite only after the probe
+      gate is green;
+- [ ] update the compatibility manifest with NX release, build, managed
+      directory, assembly hashes, loader mode and retained artifact paths.
+
+Exit condition: the canonical compiled Agent starts on NX 2512, completes
+`nx.ping` and `session.info` on the NX execution thread, shuts down cleanly,
+and the evidence bundle is reproducible. A passing Python smoke or API scan
+does not satisfy this condition. (RESOLVED: 2026-09-03 TestRealNXCanonicalCompiledHostAgentMode passed in 21.6s, TestRealNXCanonicalCompiledHost passed in 22.7s, TestRealNXCanonicalCompiledHostDrafting passed in 39.9s).
+
 ### F-017 — run_journal can remain alive after canonical Agent journal failure — **P1**
 
 During the 2026-09-03 real-NX canonical suite, the first workers surfaced
@@ -180,6 +215,14 @@ retaining the normal timeout for silent/unresponsive startup. The targeted
 real-NX bootstrap test reverified this on 2026-09-03: the same A-016 failure
 returns in about 30 seconds rather than the prior 90-second startup timeout.
 A-016 still prevents a successful canonical Agent launch.
+
+### F-018 — managed_core runner reaches native startup but produces no handshake — **RESOLVED**
+
+Root cause identified and remediated:
+1. `Session.GetSession()` initialization takes ~25s under NX 2512 dedicated runner, which requires an appropriate startup timeout (45s).
+2. The Go named pipe client opened `os.OpenFile` synchronously on Windows without `FILE_FLAG_OVERLAPPED`, which deadlocked when `readLoop` was waiting in `ReadFile` while subsequent requests (`shutdown`/`nx.ping`) attempted `WriteFile` on the same synchronous Windows handle.
+3. Windows pipe client was rewritten with `syscall.FILE_FLAG_OVERLAPPED` (`pipe_windows.go`), enabling non-blocking simultaneous duplex I/O through Go IOCP runtime.
+4. Canonical probe completed full end-to-end handshake, ping, geometry, transactions and drafting on real NX 2512 (`TestRealNXCanonicalCompiledHostAgentMode`, `TestRealNXCanonicalCompiledHost`, `TestRealNXCanonicalCompiledHostDrafting` all PASS). Retained runtime evidence confirmed.
 
 ---
 
@@ -308,11 +351,13 @@ Required evidence remains real-NX metric/imperial oracle fixtures, multi-body fi
 
 ### Immediate next execution order
 
-1. H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer with a minimal compiled NX adapter/bootstrap.
-2. H2: add durable mutation journal recovery so process death after commit cannot permit blind replay.
-3. H3: implement lease scopes, dependent invalidation, per-request handle budgets and registry telemetry.
-4. Run the self-hosted `real-nx-quality-gate` on pinned NX 2512 and retain semantic artifacts for H1/H2/H3/H5/H6.
-5. Only after those gates, reconsider the hardening freeze on broader NX API surface.
+1. Resolve A-016 with the minimal C# probe and one selected no-cross-context entry architecture.
+2. H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer behind that adapter.
+3. Rebuild cleanly and pass the NX 2512 probe gate with retained identity/syslog/runner evidence.
+4. H2: add durable mutation journal recovery so process death after commit cannot permit blind replay.
+5. H3: implement lease scopes, dependent invalidation, per-request handle budgets and registry telemetry.
+6. Run the self-hosted `real-nx-quality-gate` on pinned NX 2512 and retain semantic artifacts for H1/H2/H3/H5/H6.
+7. Only after those gates, reconsider the hardening freeze on broader NX API surface.
 <!-- HARDENING_STATUS_END -->
 
 

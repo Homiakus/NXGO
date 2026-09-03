@@ -49,13 +49,13 @@ func TestRealNXCanonicalCompiledHostDrafting(t *testing.T) {
 		}
 	}()
 
-	bootstrap := filepath.Join(repoRoot, "agent", "bundle", "CompiledHostBootstrap.cs")
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 
 	worker, err := supervisor.StartWorker(ctx, supervisor.WorkerConfig{
 		NXHome:         getNXHome(t),
-		JournalPath:    bootstrap,
+		AgentMode:      supervisor.AgentModeCanonical,
+		AgentBin:       agentBin,
 		StartupTimeout: 45 * time.Second,
 	})
 	if err != nil {

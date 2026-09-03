@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"runtime"
-	"strings"
 	"sync"
 
 	"github.com/Homiakus/NXGO/internal/protocol"
@@ -122,29 +119,7 @@ func (fc *FramedConn) Close() error {
 }
 
 func DialPipe(ctx context.Context, pipePath string) (io.ReadWriteCloser, error) {
-	if runtime.GOOS != "windows" && !strings.HasPrefix(pipePath, `\\.\pipe\`) {
-		return nil, fmt.Errorf("named pipes require windows: %s", pipePath)
-	}
-
-	type dialResult struct {
-		file *os.File
-		err  error
-	}
-	ch := make(chan dialResult, 1)
-	go func() {
-		f, err := os.OpenFile(pipePath, os.O_RDWR, 0)
-		ch <- dialResult{file: f, err: err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case res := <-ch:
-		if res.err != nil {
-			return nil, fmt.Errorf("dial pipe %q: %w", pipePath, res.err)
-		}
-		return res.file, nil
-	}
+	return openPipe(ctx, pipePath)
 }
 
 type callResult struct {

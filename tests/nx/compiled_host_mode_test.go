@@ -33,8 +33,11 @@ func TestRealNXCanonicalCompiledHostAgentMode(t *testing.T) {
 	}
 	defer worker.Kill()
 
-	if filepath.Base(worker.Config.JournalPath) != "CompiledHostBootstrap.cs" {
-		t.Fatalf("canonical mode selected wrong journal: %s", worker.Config.JournalPath)
+	if filepath.Base(worker.Config.TargetPath) != "NXGO.Agent.NXHost.dll" {
+		t.Fatalf("canonical mode selected wrong target: %s", worker.Config.TargetPath)
+	}
+	if filepath.Base(worker.Config.RunnerPath) != "run_dotnet_core_nxopen.exe" {
+		t.Fatalf("canonical mode selected wrong runner: %s", worker.Config.RunnerPath)
 	}
 	if worker.Config.AgentBin == "" {
 		t.Fatal("canonical mode did not resolve AgentBin")
@@ -55,6 +58,6 @@ func TestRealNXCanonicalCompiledHostAgentMode(t *testing.T) {
 	if err := worker.Stop(ctx); err != nil {
 		t.Fatalf("canonical AgentMode shutdown failed: %v", err)
 	}
-	t.Logf("supervisor AgentModeCanonical verified: bootstrap=%s bin=%s release=%s",
-		worker.Config.JournalPath, worker.Config.AgentBin, worker.Manifest.NXRelease)
+	t.Logf("supervisor AgentModeCanonical verified: runner=%s target=%s release=%s",
+		worker.Config.RunnerPath, worker.Config.TargetPath, worker.Manifest.NXRelease)
 }

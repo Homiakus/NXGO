@@ -237,7 +237,7 @@ public static partial class EntryPoint
             {
                 path = "unresolved/" + (child.DisplayName ?? child.Name ?? "component");
             }
-            List<string> names;
+            List<string>? names;
             if (!groups.TryGetValue(path, out names))
             {
                 names = new List<string>();
@@ -276,7 +276,7 @@ public static partial class EntryPoint
 
     private static int GetInt(Dictionary<string, object> source, string key, int defaultValue)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null) return defaultValue;
         return Convert.ToInt32(value, CultureInfo.InvariantCulture);
     }

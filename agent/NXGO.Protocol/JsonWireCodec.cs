@@ -9,7 +9,7 @@ namespace NXGO.Protocol;
 /// Canonical Siemens-independent JSON codec for the NXGO wire contract.
 /// Type metadata is explicitly disabled: payload JSON is data, never a request
 /// to instantiate arbitrary CLR types. The same netstandard2.0 codec is used by
-/// ordinary CI and the net48 NX host.
+/// ordinary CI and the .NET 8 NX host.
 /// </summary>
 public sealed class JsonWireCodec
 {

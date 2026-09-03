@@ -62,13 +62,14 @@ This is executable evidence for the **core boundary** of `NXGO-INV-EXEC-001/002`
 
 ### Dedicated NX worker host skeleton
 
-`agent/NXGO.Agent.NXHost` targets `net48` and references `NXOpen.dll` / `NXOpen.UF.dll` only from an installed NX environment supplied through `NXGO_NX_MANAGED`.
+`agent/NXGO.Agent.NXHost` targets .NET 8 and is launched by the installed NX2512 `NXBIN\managed_core\run_dotnet_core_nxopen.exe` against its matching `NXGO.Agent.NXHost.dll`. NXOpen references come only from the installed `managed_core` directory supplied through `NXGO_NX_MANAGED`.
 
 The current worker-host design:
 
 ```text
 NX entry thread
-    -> Session.GetSession()
+    -> run_dotnet_core_nxopen.exe NXGO.Agent.NXHost.dll
+    -> Program.Main -> Session.GetSession()
     -> NxExecutor.BindToCurrentThread()
     -> start named-pipe transport on background task
     -> drain queued NX work on NX entry thread

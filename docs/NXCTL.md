@@ -48,6 +48,12 @@ Produces machine-readable and human reports plus failure artifact bundles.
 
 ```text
 nxctl api scan --version 2606
+
+When no NX path is supplied, NXGO discovers installed Siemens NX releases under
+`%ProgramFiles%\Siemens`, selects the newest valid release, and prefers
+`NXBIN\managed_core` over `NXBIN\managed` when building or scanning. Use
+`NXGO_NX_HOME`, `NXGO_NX_MANAGED`, or an explicit command argument only to
+override discovery.
 nxctl api diff 2512 2606
 nxctl api find "projected view"
 nxctl api inspect NXOpen.Drawings.ProjectedViewBuilder

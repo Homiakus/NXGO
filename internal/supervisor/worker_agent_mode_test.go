@@ -12,6 +12,7 @@ var canonicalRuntimeDLLs = []string{
 	"NXGO.Protocol.dll",
 	"NXGO.Agent.Core.dll",
 	"NXGO.Agent.NXHost.dll",
+	"NXGO.Agent.NXHost.runtimeconfig.json",
 }
 
 func TestResolveWorkerAgentPathsDefaultsToCanonical(t *testing.T) {
@@ -20,9 +21,9 @@ func TestResolveWorkerAgentPathsDefaultsToCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve canonical default: %v", err)
 	}
-	want := filepath.Join(root, "agent", "bundle", "CompiledHostBootstrap.cs")
+	want := filepath.Join(root, "agent", "bin", "NXGO.Agent.NXHost.dll")
 	if journal != want {
-		t.Fatalf("canonical journal mismatch: got %q want %q", journal, want)
+		t.Fatalf("canonical target mismatch: got %q want %q", journal, want)
 	}
 	wantBin, err := filepath.Abs(filepath.Join(root, "agent", "bin"))
 	if err != nil {
@@ -39,9 +40,9 @@ func TestResolveWorkerAgentPathsCanonicalRequiresCompiledArtifacts(t *testing.T)
 	if err != nil {
 		t.Fatalf("resolve canonical mode: %v", err)
 	}
-	wantJournal := filepath.Join(root, "agent", "bundle", "CompiledHostBootstrap.cs")
-	if journal != wantJournal {
-		t.Fatalf("canonical journal mismatch: got %q want %q", journal, wantJournal)
+	wantTarget := filepath.Join(root, "agent", "bin", "NXGO.Agent.NXHost.dll")
+	if journal != wantTarget {
+		t.Fatalf("canonical target mismatch: got %q want %q", journal, wantTarget)
 	}
 	wantBin, err := filepath.Abs(filepath.Join(root, "agent", "bin"))
 	if err != nil {
@@ -109,6 +110,38 @@ func TestResolveWorkerAgentPathsRejectsUnknownMode(t *testing.T) {
 	}
 }
 
+func TestCanonicalWorkerLaunchUsesManagedCoreRunnerAndDLL(t *testing.T) {
+	inst := &Installation{
+		Home:                `C:\Program Files\Siemens\DesigncenterNX2512`,
+		ManagedDir:          `C:\Program Files\Siemens\DesigncenterNX2512\NXBIN\managed_core`,
+		RunDotnetCoreNXOpen: `C:\Program Files\Siemens\DesigncenterNX2512\NXBIN\managed_core\run_dotnet_core_nxopen.exe`,
+	}
+	target := `D:\NXGO\agent\bin\NXGO.Agent.NXHost.dll`
+	command, args, err := resolveCanonicalWorkerLaunch(inst, target)
+	if err != nil {
+		t.Fatalf("resolve managed_core launch: %v", err)
+	}
+	if command != inst.RunDotnetCoreNXOpen || len(args) != 1 || args[0] != strings.TrimSuffix(target, filepath.Ext(target)) {
+		t.Fatalf("unexpected managed_core launch: command=%q args=%q", command, args)
+	}
+}
+
+func TestCanonicalWorkerLaunchRejectsLegacyManagedRunnerAndNonDLLTarget(t *testing.T) {
+	legacy := &Installation{
+		Home:                `C:\NX2512`,
+		ManagedDir:          `C:\NX2512\NXBIN\managed`,
+		RunDotnetCoreNXOpen: `C:\NX2512\NXBIN\managed_core\run_dotnet_core_nxopen.exe`,
+	}
+	if _, _, err := resolveCanonicalWorkerLaunch(legacy, `D:\agent\NXGO.Agent.NXHost.dll`); err == nil {
+		t.Fatal("canonical launch selected legacy managed directory")
+	}
+	core := *legacy
+	core.ManagedDir = `C:\NX2512\NXBIN\managed_core`
+	if _, _, err := resolveCanonicalWorkerLaunch(&core, `D:\agent\NXGO.Agent.NXHost.exe`); err == nil {
+		t.Fatal("canonical launch accepted an .exe target; runner requires the matching .dll")
+	}
+}
+
 func TestWorkerJournalStatePathUsesArtifactDirectory(t *testing.T) {
 	artifactDir := filepath.Join("e:", "nxgo", "artifacts")
 	got := filepath.Join(artifactDir, "request-journal.bin")
@@ -128,9 +161,7 @@ func createAgentLayout(t *testing.T, withDLLs bool) string {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{
-		filepath.Join(bundle, "CompiledHostBootstrap.cs"),
-	} {
+	for _, file := range []string{filepath.Join(bundle, "placeholder.txt")} {
 		if err := os.WriteFile(file, []byte("// fixture"), 0o644); err != nil {
 			t.Fatal(err)
 		}

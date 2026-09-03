@@ -3,12 +3,14 @@ package supervisor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,8 +26,8 @@ var (
 type AgentMode string
 
 const (
-	// AgentModeCanonical launches the minimal run_journal bootstrap that loads
-	// NXGO.Agent.Core.dll + NXGO.Agent.NXHost.dll from AgentBin.
+	// AgentModeCanonical launches Siemens' NX2512 managed_core/.NET 8 runner
+	// against the compiled NXGO.Agent.NXHost DLL.
 	AgentModeCanonical AgentMode = "canonical"
 )
 
@@ -36,6 +38,8 @@ type WorkerConfig struct {
 	JournalPath    string
 	AgentMode      AgentMode
 	AgentBin       string
+	RunnerPath     string
+	TargetPath     string
 	StartupTimeout time.Duration
 }
 
@@ -100,22 +104,51 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		cfg.StartupTimeout = 30 * time.Second
 	}
 
-	journalPath, agentBin, err := resolveWorkerAgentPaths(cfg, findRepoRoot())
+	requestedJournal := cfg.JournalPath
+	targetPath, agentBin, err := resolveWorkerAgentPaths(cfg, findRepoRoot())
 	if err != nil {
 		return nil, err
 	}
-	cfg.JournalPath = journalPath
+	cfg.JournalPath = ""
 	cfg.AgentBin = agentBin
+	cfg.TargetPath = targetPath
 
-	absJournal, err := filepath.Abs(cfg.JournalPath)
-	if err != nil {
-		return nil, err
+	var command string
+	var commandArgs []string
+	if requestedJournal != "" {
+		// Explicit custom journals remain available for fixtures and are not the
+		// canonical Agent path. They continue to use Siemens run_journal.
+		absJournal, absErr := filepath.Abs(requestedJournal)
+		if absErr != nil {
+			return nil, absErr
+		}
+		cfg.JournalPath = absJournal
+		command = inst.RunJournal
+		commandArgs = []string{absJournal}
+	} else {
+		command, commandArgs, err = resolveCanonicalWorkerLaunch(inst, targetPath)
+		if err != nil {
+			return nil, err
+		}
+		cfg.RunnerPath = command
 	}
 
-	cmd := exec.Command(inst.RunJournal, absJournal)
+	cmd := exec.Command(command, commandArgs...)
+	// Siemens' managed_core runner resolves NX native libraries relative to
+	// NXBIN. Starting it from the repository/agent output directory can load
+	// managed assemblies successfully but leaves libuginit unresolved.
+	cmd.Dir = filepath.Join(inst.Home, "NXBIN")
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("NXGO_PIPE_NAME=%s", cfg.PipeName),
 		fmt.Sprintf("UGII_BASE_DIR=%s", inst.Home),
+		fmt.Sprintf("UGII_NXBIN=%s", filepath.Join(inst.Home, "NXBIN")),
+		fmt.Sprintf("UGII_ROOT_DIR=%s", inst.Home),
+		"UGII_PLATFORM=x64wnt",
+		fmt.Sprintf("UGII_LOCALIZATION_FILES=%s", filepath.Join(inst.Home, "localization")),
+		fmt.Sprintf("HOME=%s", os.TempDir()),
+		// The direct managed_core runner does not inherit run_journal's native
+		// search path, but NXOpen P/Invokes libuginit and related NX binaries.
+		fmt.Sprintf("PATH=%s;%s;%s;%s", filepath.Join(inst.Home, "NXBIN"), filepath.Join(inst.Home, "UGII"), filepath.Join(inst.Home, "NXBIN", "managed_core"), os.Getenv("PATH")),
 	)
 	if cfg.ArtifactDir != "" {
 		journalState := filepath.Join(cfg.ArtifactDir, "request-journal.bin")
@@ -124,13 +157,17 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	if cfg.AgentBin != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("NXGO_AGENT_BIN=%s", cfg.AgentBin))
 	}
+	if cfg.ArtifactDir != "" {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("NXGO_AGENT_DIAGNOSTICS=%s", filepath.Join(cfg.ArtifactDir, "agent-bootstrap.log")))
+		_ = writeRunnerLaunchDiagnostic(cfg.ArtifactDir, command, commandArgs, inst)
+	}
 
 	var outBuf synchronizedBuffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &outBuf
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start run_journal: %w", err)
+		return nil, fmt.Errorf("start NX Agent runner %s: %w", filepath.Base(command), err)
 	}
 
 	// Exactly one goroutine owns Cmd.Wait. This both reaps the child and gives
@@ -201,10 +238,57 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 	return wp, nil
 }
 
-// resolveWorkerAgentPaths is intentionally NX-independent so the launch-mode
-// contract is covered by ordinary CI. Explicit JournalPath remains an escape
-// hatch for test fixtures/custom journals, but it cannot be combined with an
-// AgentMode because that would make the selected runtime ambiguous.
+func writeRunnerLaunchDiagnostic(artifactDir, command string, args []string, inst *Installation) error {
+	if inst == nil || artifactDir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"command": command, "args": args, "nx_home": inst.Home,
+		"managed_dir": inst.ManagedDir, "runner": inst.RunDotnetCoreNXOpen,
+		"working_dir": filepath.Join(inst.Home, "NXBIN"),
+		"environment_contract": map[string]string{
+			"UGII_BASE_DIR": inst.Home,
+			"UGII_ROOT_DIR": inst.Home,
+			"UGII_NXBIN":    filepath.Join(inst.Home, "NXBIN"),
+			"UGII_PLATFORM": "x64wnt",
+			"HOME":          os.TempDir(),
+		},
+		"mode": "managed_core", "created_at_utc": time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(artifactDir, "runner-launch.json"), data, 0o644)
+}
+
+// resolveCanonicalWorkerLaunch is intentionally NX-independent so the
+// managed_core command/argument contract is covered by ordinary CI.
+func resolveCanonicalWorkerLaunch(inst *Installation, targetPath string) (string, []string, error) {
+	if inst == nil {
+		return "", nil, errors.New("canonical NX Agent installation is required")
+	}
+	if inst.RunDotnetCoreNXOpen == "" {
+		return "", nil, fmt.Errorf("canonical NX Agent requires NX2512 managed_core runner run_dotnet_core_nxopen.exe under %s", inst.Home)
+	}
+	if filepath.Base(inst.ManagedDir) != "managed_core" {
+		return "", nil, fmt.Errorf("canonical NX Agent requires managed_core NXOpen assemblies; discovered %s", inst.ManagedDir)
+	}
+	if strings.ToLower(filepath.Ext(targetPath)) != ".dll" {
+		return "", nil, fmt.Errorf("canonical NX Agent target must be a .NET DLL: %s", targetPath)
+	}
+	return inst.RunDotnetCoreNXOpen, []string{strings.TrimSuffix(targetPath, filepath.Ext(targetPath))}, nil
+}
+
+// resolveWorkerAgentPaths is intentionally NX-independent so the target
+// contract is covered by ordinary CI. For canonical mode the first result is
+// the .NET target DLL, not a run_journal source file. Explicit JournalPath
+// remains an escape hatch for test fixtures/custom journals, but it cannot be
+// combined with an AgentMode because that would make the selected runtime
+// ambiguous.
 func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath string, agentBin string, err error) {
 	if cfg.JournalPath != "" {
 		if cfg.AgentMode != "" {
@@ -220,11 +304,6 @@ func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath str
 
 	switch mode {
 	case AgentModeCanonical:
-		journalPath = filepath.Join(repoRoot, "agent", "bundle", "CompiledHostBootstrap.cs")
-		if _, statErr := os.Stat(journalPath); statErr != nil {
-			return "", "", fmt.Errorf("canonical NX Agent bootstrap unavailable: %w", statErr)
-		}
-
 		agentBin = cfg.AgentBin
 		if agentBin == "" {
 			agentBin = filepath.Join(repoRoot, "agent", "bin")
@@ -234,13 +313,13 @@ func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath str
 			return "", "", fmt.Errorf("resolve canonical AgentBin: %w", absErr)
 		}
 		agentBin = absBin
-		for _, dll := range []string{"Newtonsoft.Json.dll", "NXGO.Protocol.dll", "NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll"} {
+		for _, dll := range []string{"Newtonsoft.Json.dll", "NXGO.Protocol.dll", "NXGO.Agent.Core.dll", "NXGO.Agent.NXHost.dll", "NXGO.Agent.NXHost.runtimeconfig.json"} {
 			path := filepath.Join(agentBin, dll)
 			if _, statErr := os.Stat(path); statErr != nil {
 				return "", "", fmt.Errorf("canonical NX Agent artifact unavailable %s: %w", path, statErr)
 			}
 		}
-		return journalPath, agentBin, nil
+		return filepath.Join(agentBin, "NXGO.Agent.NXHost.dll"), agentBin, nil
 
 	default:
 		return "", "", fmt.Errorf("unsupported NX Agent mode %q", mode)

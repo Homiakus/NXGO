@@ -14,8 +14,7 @@ import (
 )
 
 // TestRealNXCanonicalCompiledHost proves the H4 migration lane end-to-end:
-// supervisor canonical mode -> run_journal -> minimal CompiledHostBootstrap.cs ->
-// Newtonsoft.Json.dll -> NXGO.Protocol.dll -> NXGO.Agent.Core.dll ->
+// supervisor canonical mode -> run_dotnet_core_nxopen.exe ->
 // NXGO.Agent.NXHost.dll -> shared NxExecutor/RequestJournal/HandleRegistry on the
 // NX execution thread. It runs geometry, transaction, lifetime and Assembly
 // oracles through canonical adapters. E3 is earned only when this fixture is
@@ -60,11 +59,6 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 			_ = os.Unsetenv("NXGO_AGENT_BIN")
 		}
 	}()
-
-	bootstrap := filepath.Join(repoRoot, "agent", "bundle", "CompiledHostBootstrap.cs")
-	if _, err := os.Stat(bootstrap); err != nil {
-		t.Fatalf("compiled-host bootstrap missing: %v", err)
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()

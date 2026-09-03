@@ -10,13 +10,19 @@ func createMockNX(t *testing.T, root, version string, includeUF bool) string {
 	t.Helper()
 	nxDir := filepath.Join(root, "Siemens", "NX"+version)
 	ugii := filepath.Join(nxDir, "UGII")
-	managed := filepath.Join(ugii, "managed")
+	managed := filepath.Join(nxDir, "NXBIN", "managed_core")
 
 	if err := os.MkdirAll(managed, 0755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(ugii, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.WriteFile(filepath.Join(ugii, "run_journal.exe"), []byte("mock-journal"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(managed, "run_dotnet_core_nxopen.exe"), []byte("mock-runner"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(managed, "NXOpen.dll"), []byte("mock-nxopen"), 0644); err != nil {
@@ -40,7 +46,7 @@ func TestInspectAndDiscover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("inspect failed: %v", err)
 	}
-	if inst.Release != "2512" || !inst.HasNXOpenUF {
+	if inst.Release != "2512" || !inst.HasNXOpenUF || inst.ManagedDir != filepath.Join(nx2512, "NXBIN", "managed_core") || inst.RunDotnetCoreNXOpen == "" {
 		t.Fatalf("unexpected inst details: %+v", inst)
 	}
 

@@ -226,7 +226,15 @@ func runCmd(ctx context.Context, name string, args ...string) error {
 }
 
 func runAPI(ctx context.Context, args []string) error {
-	if len(args) == 0 {
+	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
+		if len(args) > 0 {
+			fmt.Println("Usage: nxctl api <scan|find|inspect|diff> [options]")
+			fmt.Println("  scan [managed-dir] [--out manifest.json]  Scan NXOpen assemblies")
+			fmt.Println("  find <query> --manifest manifest.json   Search scanned API")
+			fmt.Println("  inspect <type> --manifest manifest.json Inspect a type")
+			fmt.Println("  diff <a.json> <b.json>                  Compare manifests")
+			return nil
+		}
 		return errors.New("usage: nxctl api <scan|find|inspect|diff> [options]")
 	}
 	switch args[0] {

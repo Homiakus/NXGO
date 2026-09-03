@@ -63,7 +63,9 @@ public static partial class EntryPoint
     // Canonical entry point consumed by CompiledHostBootstrap: EntryPoint.Run.
     public static void Run(string[] args)
     {
-        var session = Session.GetSession();
+        Program.WriteDiagnostic("NXGO: calling Session.GetSession()...");
+        var session = Session.GetSession() ?? throw new InvalidOperationException("Session.GetSession() returned null");
+        Program.WriteDiagnostic("NXGO: Session.GetSession() completed: ok");
         var executor = new NxExecutor();
         executor.BindToCurrentThread();
 
@@ -73,10 +75,12 @@ public static partial class EntryPoint
             pipeName = "nxgo-worker-" + Process.GetCurrentProcess().Id;
         }
 
+        Program.WriteDiagnostic($"NXGO: starting pipe server on {pipeName}...");
         using (var server = new NamedPipeRequestServer(pipeName!, (payload, token) => HandleRequest(session, executor, payload, token)))
         {
             session.LogFile.WriteLine($"[NXGO] canonical NXHost start pipe={pipeName} protocol={ProtocolMajor}.{ProtocolMinor}");
             server.Start();
+            Program.WriteDiagnostic($"NXGO: pipe server started on {pipeName}");
 
             while (!_shutdownRequested && Health.Value != SessionHealth.Lost)
             {
@@ -86,6 +90,7 @@ public static partial class EntryPoint
 
             SaveJournal(session);
             session.LogFile.WriteLine($"[NXGO] canonical NXHost stop health={Health.Value} registry={Registry.Count}/{Registry.Capacity} high_water={Registry.HighWatermark} journal={Journal.Count}/{Journal.Capacity}");
+            Program.WriteDiagnostic("NXGO: server loop exited");
         }
     }
 
@@ -606,7 +611,7 @@ public static partial class EntryPoint
 
     private static Dictionary<string, object>? GetObject(Dictionary<string, object> source, string key, bool required)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null)
         {
             if (required) throw new ArgumentException("missing object field: " + key);
@@ -619,14 +624,14 @@ public static partial class EntryPoint
 
     private static string GetString(Dictionary<string, object> source, string key, string defaultValue)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null) return defaultValue;
         return Convert.ToString(value, CultureInfo.InvariantCulture) ?? defaultValue;
     }
 
     private static bool GetBool(Dictionary<string, object> source, string key, bool defaultValue)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null) return defaultValue;
         if (value is bool) return (bool)value;
         bool parsed;
@@ -635,14 +640,14 @@ public static partial class EntryPoint
 
     private static ulong GetUInt64(Dictionary<string, object> source, string key)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null) throw new ArgumentException("missing numeric field: " + key);
         return Convert.ToUInt64(value, CultureInfo.InvariantCulture);
     }
 
     private static uint GetUInt32(Dictionary<string, object> source, string key)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null) throw new ArgumentException("missing numeric field: " + key);
         return Convert.ToUInt32(value, CultureInfo.InvariantCulture);
     }

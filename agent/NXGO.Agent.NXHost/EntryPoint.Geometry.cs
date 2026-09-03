@@ -293,7 +293,7 @@ public static partial class EntryPoint
         {
             throw new ArgumentException("boolean operation is not implemented by the canonical backend; only create is accepted");
         }
-        object target;
+        object? target;
         if (payload.TryGetValue("target_body_ref", out target) && target != null)
         {
             throw new ArgumentException("target_body_ref is not implemented by the canonical backend");
@@ -302,14 +302,14 @@ public static partial class EntryPoint
 
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
-        object value;
+        object? value;
         if (!source.TryGetValue(key, out value) || value == null) return defaultValue;
         return Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }
 
     private static double[] GetDoubleArray(Dictionary<string, object> source, string key, int requiredLength, double[] defaultValue)
     {
-        object raw;
+        object? raw;
         if (!source.TryGetValue(key, out raw) || raw == null) return (double[])defaultValue.Clone();
         var items = ToObjectArray(raw);
         if (items.Length != requiredLength) throw new ArgumentException(key + " must contain exactly " + requiredLength + " numbers");
@@ -320,7 +320,7 @@ public static partial class EntryPoint
 
     private static object[] GetArray(Dictionary<string, object> source, string key)
     {
-        object raw;
+        object? raw;
         if (!source.TryGetValue(key, out raw) || raw == null) return new object[0];
         return ToObjectArray(raw);
     }

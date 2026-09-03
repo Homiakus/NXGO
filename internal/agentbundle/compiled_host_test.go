@@ -59,7 +59,7 @@ func requireExecutionTimeResolve(t *testing.T, source, method, resolveMarker str
 
 func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	root := repoRootForCompiledHostTest(t)
-	bootstrap := readRepoFile(t, root, "agent/bundle/CompiledHostBootstrap.cs")
+	bootstrap := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/Program.cs")
 	host := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.cs")
 	geometry := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.Geometry.cs")
 	transactions := readRepoFile(t, root, "agent/NXGO.Agent.NXHost/EntryPoint.Transactions.cs")
@@ -69,22 +69,27 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 	build := readRepoFile(t, root, "scripts/build-agent.ps1")
 
 	for _, marker := range []string{
-		"NXGO_AGENT_BIN",
-		"Newtonsoft.Json.dll",
-		"NXGO.Protocol.dll",
-		"NXGO.Agent.Core.dll",
-		"NXGO.Agent.NXHost.dll",
-		"NXGO.Agent.NXHost.EntryPoint",
-		"Assembly.LoadFrom",
+		"NXGO_AGENT_DIAGNOSTICS",
+		"NXGO managed_core bootstrap: entered",
+		"EntryPoint.Run(args ?? Array.Empty<string>())",
+		"NXGO managed_core bootstrap failed",
 	} {
 		if !strings.Contains(bootstrap, marker) {
 			t.Errorf("compiled bootstrap missing marker %q", marker)
+		}
+	}
+	for _, forbidden := range []string{"Assembly.Load", "GetMethod", ".Invoke("} {
+		if strings.Contains(bootstrap, forbidden) {
+			t.Errorf("managed_core bootstrap must not use reflection-based loading/execution: %q", forbidden)
 		}
 	}
 	if strings.Contains(bootstrap, "class NxExecutor") || strings.Contains(bootstrap, "class ObjectRegistry") {
 		t.Fatal("compiled bootstrap must remain a loader only; runtime primitives cannot be duplicated there")
 	}
 
+	if !strings.Contains(project, "<TargetFramework>net8.0</TargetFramework>") || !strings.Contains(project, "<OutputType>Exe</OutputType>") {
+		t.Fatal("NXHost must be a .NET 8 executable for the managed_core runner")
+	}
 	if !strings.Contains(project, "<ProjectReference") || !strings.Contains(project, "NXGO.Agent.Core") || !strings.Contains(project, "NXGO.Protocol") {
 		t.Fatal("NXHost must consume NXGO.Agent.Core and NXGO.Protocol through ProjectReferences")
 	}
@@ -94,7 +99,6 @@ func TestCanonicalCompiledHostMigrationLaneIsWired(t *testing.T) {
 
 	for _, marker := range []string{
 		"using NXGO.Agent.Core;",
-		"EntryPoint.Run",
 		"new NxExecutor()",
 		"new NamedPipeRequestServer",
 		"HandleRegistry<TaggedObject>",

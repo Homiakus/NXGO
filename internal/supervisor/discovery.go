@@ -17,13 +17,15 @@ var (
 var versionRE = regexp.MustCompile(`NX\s*(\d{4})|(\d{4})`)
 
 type Installation struct {
-	Release      string `json:"release"`
-	Home         string `json:"home"`
-	UGII         string `json:"ugii"`
-	RunJournal   string `json:"run_journal"`
-	NXOpenDLL    string `json:"nxopen_dll"`
-	HasNXOpenUF  bool   `json:"has_nxopen_uf"`
-	Source       string `json:"source"`
+	Release             string `json:"release"`
+	Home                string `json:"home"`
+	UGII                string `json:"ugii"`
+	RunJournal          string `json:"run_journal"`
+	RunDotnetCoreNXOpen string `json:"run_dotnet_core_nxopen"`
+	ManagedDir          string `json:"managed_dir"`
+	NXOpenDLL           string `json:"nxopen_dll"`
+	HasNXOpenUF         bool   `json:"has_nxopen_uf"`
+	Source              string `json:"source"`
 }
 
 func InspectInstallation(path string, source string) (*Installation, error) {
@@ -49,20 +51,43 @@ func InspectInstallation(path string, source string) (*Installation, error) {
 		}
 	}
 
-	// Locate NXOpen.dll in UGII/managed or NXBIN/managed
-	nxopenDLL := filepath.Join(clean, "UGII", "managed", "NXOpen.dll")
-	if _, err := os.Stat(nxopenDLL); err != nil {
-		altDLL := filepath.Join(clean, "NXBIN", "managed", "NXOpen.dll")
-		if _, err := os.Stat(altDLL); err == nil {
-			nxopenDLL = altDLL
-		} else {
-			// Also check direct UGII/NXBIN
-			altDirect := filepath.Join(ugii, "NXOpen.dll")
-			if _, err := os.Stat(altDirect); err == nil {
-				nxopenDLL = altDirect
-			} else {
-				return nil, fmt.Errorf("NXOpen.dll not found in %s/managed", ugii)
+	// NX2512's supported .NET 8 path is managed_core. Keep the legacy managed
+	// fallback for discovery and the Python smoke, but never select it for the
+	// canonical Agent launch below.
+	managedDir := ""
+	for _, candidate := range []string{
+		filepath.Join(clean, "NXBIN", "managed_core"),
+		filepath.Join(clean, "UGII", "managed_core"),
+		filepath.Join(clean, "NXBIN", "managed"),
+		filepath.Join(clean, "UGII", "managed"),
+	} {
+		if _, err := os.Stat(filepath.Join(candidate, "NXOpen.dll")); err == nil {
+			managedDir = candidate
+			break
+		}
+	}
+	if managedDir == "" {
+		// Also check direct UGII/NXBIN for older installations.
+		for _, candidate := range []string{ugii, filepath.Join(clean, "NXBIN")} {
+			if _, err := os.Stat(filepath.Join(candidate, "NXOpen.dll")); err == nil {
+				managedDir = candidate
+				break
 			}
+		}
+	}
+	if managedDir == "" {
+		return nil, fmt.Errorf("NXOpen.dll not found in %s/managed_core or %s/managed", clean, ugii)
+	}
+	nxopenDLL := filepath.Join(managedDir, "NXOpen.dll")
+
+	runDotnetCore := ""
+	for _, candidate := range []string{
+		filepath.Join(clean, "NXBIN", "managed_core", "run_dotnet_core_nxopen.exe"),
+		filepath.Join(clean, "UGII", "managed_core", "run_dotnet_core_nxopen.exe"),
+	} {
+		if _, err := os.Stat(candidate); err == nil {
+			runDotnetCore = candidate
+			break
 		}
 	}
 
@@ -75,13 +100,15 @@ func InspectInstallation(path string, source string) (*Installation, error) {
 	release := parseRelease(clean)
 
 	return &Installation{
-		Release:     release,
-		Home:        clean,
-		UGII:        ugii,
-		RunJournal:  runJournal,
-		NXOpenDLL:   nxopenDLL,
-		HasNXOpenUF: hasUF,
-		Source:      source,
+		Release:             release,
+		Home:                clean,
+		UGII:                ugii,
+		RunJournal:          runJournal,
+		RunDotnetCoreNXOpen: runDotnetCore,
+		ManagedDir:          managedDir,
+		NXOpenDLL:           nxopenDLL,
+		HasNXOpenUF:         hasUF,
+		Source:              source,
 	}, nil
 }
 
