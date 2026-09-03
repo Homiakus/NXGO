@@ -475,32 +475,32 @@ LeaseScopeID
 ## Tasks
 
 - [ ] make one canonical ObjectRef definition the source of truth for Go protocol, Go proxies and C# Agent;
-- [ ] add generation to production wire protocol and registry;
-- [ ] increment generation/revoke identity where handle reuse could occur;
-- [ ] remove all `catch {}` fallbacks that convert invalid handles into work/display part or first body;
-- [ ] if a reference field is supplied and cannot be resolved, return an error before any NX mutation;
-- [ ] distinguish absent optional reference from invalid supplied reference;
-- [ ] enforce expected `Kind` on every resolver;
-- [ ] invalidate dependent handles when a part/component lifecycle invalidates them;
-- [ ] implement explicit lease scopes for query-created ephemeral handles;
-- [ ] add per-session handle quotas and per-request produced-handle limits;
-- [ ] add bulk release and scope release in public SDK;
+- [x] add generation to production wire protocol and registry;
+- [x] increment generation/revoke identity where handle reuse could occur;
+- [x] remove all `catch {}` fallbacks that convert invalid handles into work/display part or first body;
+- [x] if a reference field is supplied and cannot be resolved, return an error before any NX mutation;
+- [x] distinguish absent optional reference from invalid supplied reference;
+- [x] enforce expected `Kind` on every resolver;
+- [x] invalidate dependent handles when a part/component lifecycle invalidates them;
+- [x] implement explicit lease scopes for query-created ephemeral handles;
+- [x] add per-session handle quotas and per-request produced-handle limits;
+- [x] add bulk release and scope release in public SDK;
 - [ ] avoid creating persistent handles for value-snapshot results when no object proxy is needed;
-- [ ] record registry size/high-watermark diagnostics.
+- [x] record registry size/high-watermark diagnostics.
 
 ## Required adversarial tests
 
-- [ ] stale session handle;
-- [ ] stale epoch;
-- [ ] wrong generation;
-- [ ] wrong kind;
-- [ ] released handle;
+- [x] stale session handle;
+- [x] stale epoch;
+- [x] wrong generation;
+- [x] wrong kind;
+- [x] released handle;
 - [ ] closed-part handle;
-- [ ] handle from another worker;
+- [x] handle from another worker;
 - [ ] body handle passed where part is expected;
 - [ ] explicitly invalid handle while a valid work part exists — operation must fail, never fall back;
-- [ ] repeated tree/body queries stay below defined registry bound after scope release;
-- [ ] fuzz reference decoding and lifecycle transition sequences.
+- [x] repeated tree/body queries stay below defined registry bound after scope release;
+- [x] fuzz reference decoding and lifecycle transition sequences.
 
 ## Real-NX semantic gate
 
