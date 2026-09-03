@@ -10,6 +10,7 @@
         "canonical_agent_semantic_suite": "blocked_by_A-016",
         "last_smoke_artifacts": "artifacts/nx-smoke/20260902-232053-595"
       },
+      "finding_refs": ["A-016"],
       "claims_allowed": ["nx_python_session_smoke"],
       "claims_forbidden": ["canonical_agent_production_ready", "semantic_compatibility"]
     }

@@ -26,6 +26,7 @@ type complianceEntry struct {
 type releaseEvidence struct {
 	Release         string            `json:"release"`
 	Evidence        map[string]string `json:"evidence"`
+	FindingRefs     []string          `json:"finding_refs,omitempty"`
 	ClaimsAllowed   []string          `json:"claims_allowed"`
 	ClaimsForbidden []string          `json:"claims_forbidden"`
 }
@@ -107,6 +108,18 @@ func verifyReleaseEvidence() error {
 		}
 		if len(release.Evidence) == 0 {
 			return fmt.Errorf("release %s has no evidence", release.Release)
+		}
+		for name, status := range release.Evidence {
+			if strings.EqualFold(status, "failed") || strings.HasPrefix(strings.ToLower(status), "blocked_by_") {
+				if len(release.FindingRefs) == 0 {
+					return fmt.Errorf("release %s evidence %q has status %q without audit finding reference", release.Release, name, status)
+				}
+			}
+		}
+		for _, finding := range release.FindingRefs {
+			if !regexp.MustCompile(`^A-[0-9]{3}$`).MatchString(finding) {
+				return fmt.Errorf("release %s has invalid audit finding reference %q", release.Release, finding)
+			}
 		}
 		for _, claim := range release.ClaimsAllowed {
 			lowerClaim := strings.ToLower(claim)
