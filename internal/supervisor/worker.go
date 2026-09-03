@@ -248,7 +248,7 @@ func resolveWorkerAgentPaths(cfg WorkerConfig, repoRoot string) (journalPath str
 	}
 }
 
-func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, waitDone <-chan error) (*pipe.Client, error) {
+func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, waitDone <-chan error, output *synchronizedBuffer) (*pipe.Client, error) {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	probe := time.NewTicker(100 * time.Millisecond)
@@ -266,6 +266,9 @@ func waitForPipe(ctx context.Context, pipePath string, timeout time.Duration, wa
 		case <-deadline.C:
 			return nil, ErrWorkerStartTimeout
 		case <-probe.C:
+			if output != nil && startupOutputIndicatesFailure(output.String()) {
+				return nil, ErrWorkerDied
+			}
 			dialCtx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 			conn, err := pipe.DialPipe(dialCtx, pipePath)
 			cancel()
