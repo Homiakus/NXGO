@@ -274,6 +274,41 @@ public sealed class RequestJournal
         }
     }
 
+    public static RequestJournal LoadSnapshot(Stream source, int capacity = DefaultCapacity)
+    {
+        if (source is null) throw new ArgumentNullException(nameof(source));
+        var journal = new RequestJournal(capacity);
+        using var reader = new BinaryReader(source, Encoding.UTF8, leaveOpen: true);
+        if (reader.ReadInt32() != 1) throw new InvalidDataException("unsupported request journal snapshot version");
+        var count = reader.ReadInt32();
+        if (count < 0 || count > capacity) throw new InvalidDataException("request journal snapshot count exceeds capacity");
+        for (var i = 0; i < count; i++)
+        {
+            var requestId = reader.ReadString();
+            var operation = reader.ReadString();
+            var payloadHash = reader.ReadString();
+            var state = (RequestJournalState)reader.ReadInt32();
+            var created = new DateTime(reader.ReadInt64(), DateTimeKind.Utc);
+            var completedTicks = reader.ReadInt64();
+            var failure = reader.ReadString();
+            var resultLength = reader.ReadInt32();
+            if (resultLength < -1 || resultLength > 64 * 1024 * 1024) throw new InvalidDataException("invalid journal result length");
+            var result = resultLength < 0 ? null : reader.ReadBytes(resultLength);
+            if (resultLength >= 0 && result!.Length != resultLength) throw new EndOfStreamException("truncated journal result");
+            if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(operation) || payloadHash.Length != 64 || !Enum.IsDefined(typeof(RequestJournalState), state))
+                throw new InvalidDataException("invalid request journal record");
+            if (journal._records.ContainsKey(requestId)) throw new InvalidDataException("duplicate request journal id");
+            journal._records.Add(requestId, new RequestJournalRecord(requestId, operation, payloadHash, created)
+            {
+                State = state,
+                Failure = string.IsNullOrEmpty(failure) ? null : failure,
+                ResultEnvelope = result,
+                CompletedAtUtc = completedTicks == 0 ? null : new DateTime(completedTicks, DateTimeKind.Utc),
+            });
+        }
+        return journal;
+    }
+
     public static string ComputePayloadHash(byte[]? payload)
     {
         payload ??= Array.Empty<byte>();
