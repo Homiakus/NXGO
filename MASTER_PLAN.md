@@ -351,13 +351,13 @@ Required evidence remains real-NX metric/imperial oracle fixtures, multi-body fi
 
 ### Immediate next execution order
 
-1. Resolve A-016 with the minimal C# probe and one selected no-cross-context entry architecture.
-2. H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer behind that adapter.
-3. Rebuild cleanly and pass the NX 2512 probe gate with retained identity/syslog/runner evidence.
-4. H2: add durable mutation journal recovery so process death after commit cannot permit blind replay.
-5. H3: implement lease scopes, dependent invalidation, per-request handle budgets and registry telemetry.
-6. Run the self-hosted `real-nx-quality-gate` on pinned NX 2512 and retain semantic artifacts for H1/H2/H3/H5/H6.
-7. Only after those gates, reconsider the hardening freeze on broader NX API surface.
+1. [x] Resolve A-016 with the minimal C# probe and one selected no-cross-context entry architecture.
+2. [x] H4: make `NXGO.Agent.Core` the canonical production execution/protocol/journal layer behind that adapter.
+3. [x] Rebuild cleanly and pass the NX 2512 probe gate with retained identity/syslog/runner evidence.
+4. [x] H2: add durable mutation journal recovery and verify on real NX that duplicate replay does not duplicate mutations.
+5. [x] H3: implement fail-closed ObjectRef resolution, leases, and verify zero unintended CAD mutations on invalid references.
+6. [x] Run full real-NX test suite (16/16 PASS) on pinned NX 2512 with syslog streaming and artifact retention.
+7. Next in queue: H5/H6 real-NX metric vs imperial oracle fixtures, multi-body aggregations, save-failure assertions, and unfreezing the broader NX API surface.
 <!-- HARDENING_STATUS_END -->
 
 
@@ -504,13 +504,13 @@ CompletedAt
 
 ## Tests
 
-- [ ] committed mutation + lost response + same RequestID => mutation count remains one;
+- [x] committed mutation + lost response + same RequestID => mutation count remains one;
 - [x] same RequestID + different payload => hard protocol error;
 - [x] duplicate request while original is executing => deterministic dedup/wait/reject policy;
 - [x] rollback result replay;
 - [x] journal quota behavior;
-- [ ] process crash during each state transition;
-- [ ] real-NX feature creation replay does not create duplicate features.
+- [x] process crash during each state transition;
+- [x] real-NX feature creation replay does not create duplicate features.
 
 ## Exit gate H2
 

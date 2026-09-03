@@ -238,6 +238,8 @@ public static partial class EntryPoint
                         Health.RequireReusable();
                         var release = session.GetEnvironmentVariableValue("UGII_VERSION") ?? string.Empty;
                         var baseDir = session.GetEnvironmentVariableValue("UGII_BASE_DIR") ?? string.Empty;
+                        string syslogPath = string.Empty;
+                        try { syslogPath = session.LogFile.FileName ?? string.Empty; } catch {}
                         return FormatResponse(requestId, new Dictionary<string, object>
                         {
                             ["release"] = release,
@@ -245,6 +247,7 @@ public static partial class EntryPoint
                             ["thread_id"] = Environment.CurrentManagedThreadId,
                             ["epoch"] = Epoch,
                             ["session_id"] = SessionId,
+                            ["syslog_path"] = syslogPath,
                         });
                     }, token));
 

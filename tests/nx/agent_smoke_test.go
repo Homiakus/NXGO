@@ -241,6 +241,7 @@ func TestRealNXStaleHandleRejection(t *testing.T) {
 		SessionID: "foreign-session-id-999",
 		Epoch:     1,
 		ObjectID:  "obj-999",
+		Kind:      "Part",
 	}
 
 	reqData, _ := protocol.EncodePayload(protocol.PartSummaryRequest{PartRef: &foreignRef})
@@ -265,6 +266,7 @@ func TestRealNXStaleHandleRejection(t *testing.T) {
 		SessionID: worker.Manifest.ID,
 		Epoch:     9999,
 		ObjectID:  "obj-999",
+		Kind:      "Part",
 	}
 
 	reqData2, _ := protocol.EncodePayload(protocol.PartSummaryRequest{PartRef: &foreignEpochRef})

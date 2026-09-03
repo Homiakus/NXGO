@@ -5,13 +5,13 @@ param(
 $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($NxHome)) {
     $siemensRoot = Join-Path ${env:ProgramFiles} 'Siemens'
-    $home = Get-ChildItem -LiteralPath $siemensRoot -Directory -ErrorAction SilentlyContinue |
+    $discoveredHome = Get-ChildItem -LiteralPath $siemensRoot -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match 'NX\d{4}' } |
         Sort-Object Name -Descending |
         ForEach-Object { $_.FullName } |
         Where-Object { Test-Path (Join-Path $_ 'NXBIN\run_journal.exe') } |
         Select-Object -First 1
-    if ($home) { $NxHome = $home }
+    if ($discoveredHome) { $NxHome = $discoveredHome }
 }
 if ([string]::IsNullOrWhiteSpace($NxHome)) {
     throw 'No Siemens NX installation with run_journal.exe was discovered. Set NXGO_NX_HOME to override discovery.'

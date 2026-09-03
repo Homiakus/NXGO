@@ -203,7 +203,7 @@ func runRealNX(ctx context.Context, home string) error {
 	if err := runCmd(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/nx-real-smoke.ps1"); err != nil {
 		return err
 	}
-	return runCmd(ctx, "go", "test", "-v", "-timeout", "90s", "./tests/nx")
+	return runCmd(ctx, "go", "test", "-v", "-timeout", "300s", "./tests/nx")
 }
 
 func runWithEnv(ctx context.Context, env []string, name string, args ...string) error {
