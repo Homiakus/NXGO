@@ -594,8 +594,8 @@ Recommended initial contract:
 - [ ] verify UF call parameter semantics against installed NX API docs/metadata;
 - [x] include returned unit metadata where ambiguity is possible;
 - [ ] normalize `BoundingBox`, centroid, area, volume and mass consistently;
-- [ ] implement `Part.MassProperties` over all applicable bodies;
-- [ ] expose body-level and part-level mass properties as separate semantics;
+- [x] implement `Part.MassProperties` over all applicable bodies;
+- [x] expose body-level and part-level mass properties as separate semantics;
 - [ ] define behavior for sheet bodies/non-solid bodies/mixed parts;
 - [ ] add density/material semantics instead of silently assuming a misleading mass value.
 
