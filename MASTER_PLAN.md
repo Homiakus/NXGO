@@ -632,7 +632,7 @@ Recommended initial contract:
 - [x] all NX builders use canonical `BuilderScope`;
 - [x] no same-builder retry after commit attempt;
 - [x] destroy runs on success, NXException, cancellation path and validation failure;
-- [ ] add builder leak diagnostics where NX permits;
+- [x] add builder leak diagnostics where NX permits;
 - [ ] real-NX test builder failure followed by fresh-builder retry.
 
 ## H5.4 Save/close/data durability
