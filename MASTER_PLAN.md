@@ -374,16 +374,16 @@ validate frame/envelope
 
 ### No-NX deterministic tests
 
-- [ ] timeout A, late response A, request B — B must never receive A;
-- [ ] 1,000 randomized request/timeout/late-response sequences;
-- [ ] duplicate response ID;
-- [ ] unknown response ID;
-- [ ] connection close with N pending calls;
-- [ ] server sends malformed frame between valid calls;
-- [ ] cancellation before dequeue prevents work execution;
-- [ ] cancellation after execution starts produces explicit ambiguous/final state, never false `not executed` semantics;
-- [ ] race test with concurrent callers;
-- [ ] goroutine leak test after repeated timeout cycles.
+- [x] timeout A, late response A, request B — B must never receive A;
+- [x] 1,000 randomized request/timeout/late-response sequences;
+- [x] duplicate response ID;
+- [x] unknown response ID;
+- [x] connection close with N pending calls;
+- [x] server sends malformed frame between valid calls;
+- [x] cancellation before dequeue prevents work execution;
+- [x] cancellation after execution starts produces explicit ambiguous/final state, never false `not executed` semantics;
+- [x] race test with concurrent callers;
+- [x] goroutine leak test after repeated timeout cycles.
 
 ### Real-NX tests
 
