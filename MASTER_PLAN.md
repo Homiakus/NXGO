@@ -543,7 +543,7 @@ The runtime loaded/executed by real NX must consume the same Core primitives exe
 - [x] make operation admission and handshake capabilities derive from one explicit canonical registry;
 - [ ] keep NX-specific adapters thin and release-aware;
 - [ ] keep bootstrap/journal entry point minimal;
-- [ ] make the production build fail if it bypasses canonical Core packages;
+- [x] make the production build fail if it bypasses canonical Core packages;
 - [x] add cross-language golden protocol tests using production serializer;
 - [x] add malformed/escaped/unicode payload corpus.
 
