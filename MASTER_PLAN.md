@@ -722,7 +722,7 @@ Target evidence: `E4 → E5`
 - [ ] hardened mode disables journal/reflection/raw execution escape hatches;
 - [ ] unauthorized local client test;
 - [ ] malformed/flooding client test;
-- [ ] payload and pending-request quotas.
+- [x] payload and pending-request quotas.
 
 ## H6.3 Reliability campaign
 
