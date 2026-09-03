@@ -2,6 +2,7 @@ package pipe
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net"
@@ -10,6 +11,21 @@ import (
 
 	"github.com/Homiakus/NXGO/internal/protocol"
 )
+
+func TestFramedConnRejectsPayloadAboveConnectionLimit(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+	go func() {
+		frame := make([]byte, protocol.FrameHeaderSize+3)
+		binary.LittleEndian.PutUint32(frame[:protocol.FrameHeaderSize], 3)
+		_, _ = serverConn.Write(frame)
+	}()
+	_, err := NewFramedConn(clientConn, 2).Receive()
+	if !errors.Is(err, protocol.ErrInvalidLength) {
+		t.Fatalf("expected connection payload limit error, got %v", err)
+	}
+}
 
 func TestFramedClientServerRoundtrip(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
