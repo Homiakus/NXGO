@@ -11,12 +11,16 @@ public sealed class AgentCoreTests
     public void BuilderScope_destroys_after_success()
     {
         var builder = new FakeBuilder();
+        var before = BuilderScope<FakeBuilder>.ActiveCount;
         using (var scope = new BuilderScope<FakeBuilder>(builder, b => b.Destroyed++))
         {
+            Assert.Equal(before + 1, BuilderScope<FakeBuilder>.ActiveCount);
             var value = scope.CommitOnce(b => b.Commit());
             Assert.Equal(1, value);
         }
         Assert.Equal(1, builder.Destroyed);
+        Assert.Equal(before, BuilderScope<FakeBuilder>.ActiveCount);
+        Assert.True(BuilderScope<FakeBuilder>.HighWatermark >= before + 1);
     }
 
     [Fact]
@@ -28,6 +32,7 @@ public sealed class AgentCoreTests
         Assert.Throws<InvalidOperationException>(() => scope.CommitOnce(b => b.Commit()));
         scope.Dispose();
         Assert.Equal(1, builder.Destroyed);
+        Assert.Equal(0, BuilderScope<FakeBuilder>.ActiveCount);
     }
 
     [Fact]
