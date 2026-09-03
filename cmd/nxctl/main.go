@@ -411,6 +411,11 @@ func runAPIDiff(args []string) error {
 	for _, m := range diff.AddedMethods { fmt.Printf("  + [Method] %s\n", m) }
 	fmt.Printf("Removed Methods: %d\n", len(diff.RemovedMethods))
 	for _, m := range diff.RemovedMethods { fmt.Printf("  - [Method] %s\n", m) }
+	fmt.Printf("Changed Overloads: %d\n", len(diff.ChangedOverloads))
+	for _, c := range diff.ChangedOverloads {
+		fmt.Printf("  ~ [Overload] %s.%s:\n      old: %s [%s]\n      new: %s [%s]\n",
+			c.TypeName, c.MethodName, c.OldSignature, c.OldSignatureID, c.NewSignature, c.NewSignatureID)
+	}
 
 	return nil
 }

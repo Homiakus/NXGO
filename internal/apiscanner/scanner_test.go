@@ -1,6 +1,7 @@
 package apiscanner_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Homiakus/NXGO/internal/apiscanner"
@@ -11,10 +12,12 @@ func TestAPISearchAndInspect(t *testing.T) {
 		Release: "v2512",
 		Types: []apiscanner.TypeInfo{
 			{
-				Name:      "Part",
-				Namespace: "NXOpen",
-				Assembly:  "NXOpen.dll",
-				Kind:      "class",
+				Name:       "Part",
+				Namespace:  "NXOpen",
+				Assembly:   "NXOpen.dll",
+				Kind:       "class",
+				BaseType:   "NXOpen.NXObject",
+				Interfaces: []string{"NXOpen.INXObject"},
 				Methods: []apiscanner.MethodInfo{
 					{Name: "Save", ReturnType: "PartSaveStatus"},
 					{Name: "Close", ReturnType: "Void"},
@@ -32,8 +35,20 @@ func TestAPISearchAndInspect(t *testing.T) {
 					{Name: "CommitFeature", ReturnType: "Feature"},
 				},
 			},
+			{
+				Name:      "PartUnits",
+				Namespace: "NXOpen",
+				Assembly:  "NXOpen.dll",
+				Kind:      "enum",
+				EnumMembers: []apiscanner.EnumMemberInfo{
+					{Name: "Inches", Value: 1},
+					{Name: "Millimeters", Value: 2},
+				},
+			},
 		},
 	}
+
+	apiscanner.NormalizeManifest(manifest)
 
 	// 1. Search
 	results := apiscanner.SearchTypes(manifest, "block")
@@ -54,9 +69,26 @@ func TestAPISearchAndInspect(t *testing.T) {
 	if len(info.Methods) != 2 || len(info.Properties) != 1 {
 		t.Fatalf("unexpected methods/props on Part: %+v", info)
 	}
+	if info.BaseType != "NXOpen.NXObject" || len(info.Interfaces) != 1 {
+		t.Fatalf("unexpected inheritance info: %+v", info)
+	}
+
+	// Verify signature generation
+	saveMethod := info.Methods[1]
+	if saveMethod.Name == "Close" {
+		saveMethod = info.Methods[0]
+	}
+	if saveMethod.CanonicalSignature == "" || saveMethod.SignatureID == "" {
+		t.Fatalf("expected computed canonical signature and id, got: %+v", saveMethod)
+	}
+
+	enumInfo := apiscanner.InspectType(manifest, "PartUnits")
+	if enumInfo == nil || len(enumInfo.EnumMembers) != 2 {
+		t.Fatalf("expected 2 enum members, got: %+v", enumInfo)
+	}
 }
 
-func TestAPIDiff(t *testing.T) {
+func TestAPIDiffAndChangedOverloads(t *testing.T) {
 	manifestA := &apiscanner.APIManifest{
 		Release: "v2512",
 		Types: []apiscanner.TypeInfo{
@@ -64,8 +96,17 @@ func TestAPIDiff(t *testing.T) {
 				Name:      "Part",
 				Namespace: "NXOpen",
 				Methods: []apiscanner.MethodInfo{
-					{Name: "Save", ReturnType: "Void"},
-					{Name: "OldMethod", ReturnType: "Void"},
+					{
+						Name:       "Save",
+						ReturnType: "Void",
+						Parameters: []apiscanner.ParamInfo{
+							{Name: "force", Type: "Boolean"},
+						},
+					},
+					{
+						Name:       "OldMethod",
+						ReturnType: "Void",
+					},
 				},
 			},
 			{
@@ -82,8 +123,18 @@ func TestAPIDiff(t *testing.T) {
 				Name:      "Part",
 				Namespace: "NXOpen",
 				Methods: []apiscanner.MethodInfo{
-					{Name: "Save", ReturnType: "Void"},
-					{Name: "NewAsyncSave", ReturnType: "Task"},
+					{
+						Name:       "Save",
+						ReturnType: "Void",
+						Parameters: []apiscanner.ParamInfo{
+							{Name: "force", Type: "Boolean"},
+							{Name: "closeAfterSave", Type: "Boolean"},
+						},
+					},
+					{
+						Name:       "NewAsyncSave",
+						ReturnType: "Task",
+					},
 				},
 			},
 			{
@@ -100,10 +151,17 @@ func TestAPIDiff(t *testing.T) {
 	if len(diff.RemovedTypes) != 1 || diff.RemovedTypes[0] != "NXOpen.Features.DeprecatedBuilder" {
 		t.Fatalf("expected RemovedType DeprecatedBuilder, got %+v", diff.RemovedTypes)
 	}
-	if len(diff.AddedMethods) != 1 || diff.AddedMethods[0] != "NXOpen.Part.NewAsyncSave" {
+	if len(diff.AddedMethods) != 1 || !strings.Contains(diff.AddedMethods[0], "NewAsyncSave") {
 		t.Fatalf("expected AddedMethod NewAsyncSave, got %+v", diff.AddedMethods)
 	}
-	if len(diff.RemovedMethods) != 1 || diff.RemovedMethods[0] != "NXOpen.Part.OldMethod" {
+	if len(diff.RemovedMethods) != 1 || !strings.Contains(diff.RemovedMethods[0], "OldMethod") {
 		t.Fatalf("expected RemovedMethod OldMethod, got %+v", diff.RemovedMethods)
+	}
+	if len(diff.ChangedOverloads) != 1 {
+		t.Fatalf("expected 1 ChangedOverload for Save, got %+v", diff.ChangedOverloads)
+	}
+	ch := diff.ChangedOverloads[0]
+	if ch.MethodName != "Save" || ch.OldSignatureID == "" || ch.NewSignatureID == "" {
+		t.Fatalf("unexpected ChangedOverload: %+v", ch)
 	}
 }

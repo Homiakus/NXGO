@@ -839,12 +839,12 @@ Current state: scanner/search/diff foundation exists; generated raw layer is inc
 - [x] deterministic normalized manifest foundation;
 - [x] type/method search and inspection;
 - [x] basic manifest diff;
-- [ ] define canonical overload-safe signature format;
-- [ ] compute stable API signature IDs;
-- [ ] include parameter type, ref/out, generic arity, static/instance and return type in diff;
-- [ ] detect changed overloads, not only added/removed names;
-- [ ] capture enum members and relevant constants;
-- [ ] capture inheritance/interface relationships needed for binding generation;
+- [x] define canonical overload-safe signature format;
+- [x] compute stable API signature IDs;
+- [x] include parameter type, ref/out, generic arity, static/instance and return type in diff;
+- [x] detect changed overloads, not only added/removed names;
+- [x] capture enum members and relevant constants;
+- [x] capture inheritance/interface relationships needed for binding generation;
 - [ ] generate Go raw types/methods;
 - [ ] generate C# dispatch glue;
 - [ ] generate capability IDs from bindings;

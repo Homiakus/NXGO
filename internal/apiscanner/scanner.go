@@ -3,6 +3,8 @@ package apiscanner
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -20,24 +22,37 @@ type APIManifest struct {
 }
 
 type TypeInfo struct {
-	Name       string         `json:"name"`
-	Namespace  string         `json:"namespace"`
-	Assembly   string         `json:"assembly"`
-	Kind       string         `json:"kind"`
-	Methods    []MethodInfo   `json:"methods,omitempty"`
-	Properties []PropertyInfo `json:"properties,omitempty"`
+	Name        string           `json:"name"`
+	Namespace   string           `json:"namespace"`
+	Assembly    string           `json:"assembly"`
+	Kind        string           `json:"kind"`
+	BaseType    string           `json:"base_type,omitempty"`
+	Interfaces  []string         `json:"interfaces,omitempty"`
+	EnumMembers []EnumMemberInfo `json:"enum_members,omitempty"`
+	Methods     []MethodInfo     `json:"methods,omitempty"`
+	Properties  []PropertyInfo   `json:"properties,omitempty"`
+}
+
+type EnumMemberInfo struct {
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
 }
 
 type MethodInfo struct {
-	Name       string      `json:"name"`
-	ReturnType string      `json:"return_type"`
-	Parameters []ParamInfo `json:"parameters,omitempty"`
-	IsStatic   bool        `json:"is_static"`
+	Name               string      `json:"name"`
+	ReturnType         string      `json:"return_type"`
+	Parameters         []ParamInfo `json:"parameters,omitempty"`
+	IsStatic           bool        `json:"is_static"`
+	GenericArity       int         `json:"generic_arity,omitempty"`
+	CanonicalSignature string      `json:"canonical_signature"`
+	SignatureID        string      `json:"signature_id"`
 }
 
 type ParamInfo struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	IsByRef bool   `json:"is_by_ref,omitempty"`
+	IsOut   bool   `json:"is_out,omitempty"`
 }
 
 type PropertyInfo struct {
@@ -47,13 +62,95 @@ type PropertyInfo struct {
 	CanWrite bool   `json:"can_write"`
 }
 
+type ChangedOverload struct {
+	TypeName       string `json:"type_name"`
+	MethodName     string `json:"method_name"`
+	OldSignature   string `json:"old_signature"`
+	OldSignatureID string `json:"old_signature_id"`
+	NewSignature   string `json:"new_signature"`
+	NewSignatureID string `json:"new_signature_id"`
+}
+
 type APIDiffReport struct {
-	ReleaseA       string   `json:"release_a"`
-	ReleaseB       string   `json:"release_b"`
-	AddedTypes     []string `json:"added_types,omitempty"`
-	RemovedTypes   []string `json:"removed_types,omitempty"`
-	AddedMethods   []string `json:"added_methods,omitempty"`
-	RemovedMethods []string `json:"removed_methods,omitempty"`
+	ReleaseA         string            `json:"release_a"`
+	ReleaseB         string            `json:"release_b"`
+	AddedTypes       []string          `json:"added_types,omitempty"`
+	RemovedTypes     []string          `json:"removed_types,omitempty"`
+	AddedMethods     []string          `json:"added_methods,omitempty"`
+	RemovedMethods   []string          `json:"removed_methods,omitempty"`
+	ChangedOverloads []ChangedOverload `json:"changed_overloads,omitempty"`
+}
+
+func FormatCanonicalSignature(m MethodInfo) string {
+	var b strings.Builder
+	if m.IsStatic {
+		b.WriteString("static ")
+	}
+	b.WriteString(m.Name)
+	if m.GenericArity > 0 {
+		fmt.Fprintf(&b, "<`%d>", m.GenericArity)
+	}
+	b.WriteString("(")
+	for i, p := range m.Parameters {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if p.IsOut {
+			b.WriteString("out ")
+		} else if p.IsByRef {
+			b.WriteString("ref ")
+		}
+		b.WriteString(p.Type)
+		if p.Name != "" {
+			b.WriteString(" ")
+			b.WriteString(p.Name)
+		}
+	}
+	b.WriteString("): ")
+	b.WriteString(m.ReturnType)
+	return b.String()
+}
+
+func ComputeSignatureID(canonicalSig string) string {
+	h := sha256.Sum256([]byte(canonicalSig))
+	return hex.EncodeToString(h[:8])
+}
+
+func NormalizeManifest(manifest *APIManifest) {
+	for i := range manifest.Types {
+		t := &manifest.Types[i]
+		for j := range t.Methods {
+			m := &t.Methods[j]
+			if m.CanonicalSignature == "" {
+				m.CanonicalSignature = FormatCanonicalSignature(*m)
+			}
+			if m.SignatureID == "" {
+				m.SignatureID = ComputeSignatureID(m.CanonicalSignature)
+			}
+		}
+
+		sort.Slice(t.Methods, func(a, b int) bool {
+			if t.Methods[a].Name == t.Methods[b].Name {
+				return t.Methods[a].CanonicalSignature < t.Methods[b].CanonicalSignature
+			}
+			return t.Methods[a].Name < t.Methods[b].Name
+		})
+
+		sort.Slice(t.Properties, func(a, b int) bool {
+			return t.Properties[a].Name < t.Properties[b].Name
+		})
+
+		sort.Slice(t.EnumMembers, func(a, b int) bool {
+			return t.EnumMembers[a].Value < t.EnumMembers[b].Value
+		})
+	}
+
+	sort.Slice(manifest.Types, func(i, j int) bool {
+		if manifest.Types[i].Namespace == manifest.Types[j].Namespace {
+			return manifest.Types[i].Name < manifest.Types[j].Name
+		}
+		return manifest.Types[i].Namespace < manifest.Types[j].Namespace
+	})
 }
 
 func ScanManagedAssemblies(ctx context.Context, managedDir string, assemblyNames ...string) (*APIManifest, error) {
@@ -82,13 +179,26 @@ foreach ($dll in $Assemblies) {
                 if ($m.IsSpecialName) { continue }
                 $params = @()
                 foreach ($p in $m.GetParameters()) {
-                    $params += @{ name = $p.Name; type = $p.ParameterType.Name }
+                    $pType = $p.ParameterType
+                    $isRef = $pType.IsByRef
+                    $typeName = if ($isRef) { $pType.GetElementType().Name } else { $pType.Name }
+                    $params += @{
+                        name = $p.Name
+                        type = $typeName
+                        is_by_ref = $isRef
+                        is_out = $p.IsOut
+                    }
+                }
+                $genArity = 0
+                if ($m.IsGenericMethod) {
+                    $genArity = $m.GetGenericArguments().Length
                 }
                 $methods += @{
                     name = $m.Name
                     return_type = $m.ReturnType.Name
                     parameters = $params
                     is_static = $m.IsStatic
+                    generic_arity = $genArity
                 }
             }
             $props = @()
@@ -105,11 +215,34 @@ foreach ($dll in $Assemblies) {
             elseif ($t.IsEnum) { $kind = "enum" }
             elseif ($t.IsValueType) { $kind = "struct" }
 
+            $baseType = ""
+            if ($t.BaseType) { $baseType = $t.BaseType.FullName }
+
+            $ifaces = @()
+            foreach ($iface in $t.GetInterfaces()) {
+                $ifaces += $iface.FullName
+            }
+
+            $enumMembers = @()
+            if ($t.IsEnum) {
+                $names = [System.Enum]::GetNames($t)
+                $vals = [System.Enum]::GetValues($t)
+                for ($idx = 0; $idx -lt $names.Length; $idx++) {
+                    $enumMembers += @{
+                        name = $names[$idx]
+                        value = [int64]$vals[$idx]
+                    }
+                }
+            }
+
             $result += @{
                 name = $t.Name
                 namespace = $t.Namespace
                 assembly = $dll
                 kind = $kind
+                base_type = $baseType
+                interfaces = $ifaces
+                enum_members = $enumMembers
                 methods = $methods
                 properties = $props
             }
@@ -118,7 +251,7 @@ foreach ($dll in $Assemblies) {
         Write-Error "failed scanning $dll - $_"
     }
 }
-$result | ConvertTo-Json -Depth 5 -Compress
+$result | ConvertTo-Json -Depth 6 -Compress
 `, strings.ReplaceAll(managedDir, "'", "''"), asmArrayStr)
 
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", psScript)
@@ -137,7 +270,6 @@ $result | ConvertTo-Json -Depth 5 -Compress
 
 	var rawTypes []TypeInfo
 	if err := json.Unmarshal([]byte(outStr), &rawTypes); err != nil {
-		// Single object fallback
 		var single TypeInfo
 		if err2 := json.Unmarshal([]byte(outStr), &single); err2 == nil {
 			rawTypes = []TypeInfo{single}
@@ -146,32 +278,15 @@ $result | ConvertTo-Json -Depth 5 -Compress
 		}
 	}
 
-	// Sort types, methods, properties lexicographically for determinism
-	for i := range rawTypes {
-		sort.Slice(rawTypes[i].Methods, func(a, b int) bool {
-			if rawTypes[i].Methods[a].Name == rawTypes[i].Methods[b].Name {
-				return len(rawTypes[i].Methods[a].Parameters) < len(rawTypes[i].Methods[b].Parameters)
-			}
-			return rawTypes[i].Methods[a].Name < rawTypes[i].Methods[b].Name
-		})
-		sort.Slice(rawTypes[i].Properties, func(a, b int) bool {
-			return rawTypes[i].Properties[a].Name < rawTypes[i].Properties[b].Name
-		})
-	}
-
-	sort.Slice(rawTypes, func(i, j int) bool {
-		if rawTypes[i].Namespace == rawTypes[j].Namespace {
-			return rawTypes[i].Name < rawTypes[j].Name
-		}
-		return rawTypes[i].Namespace < rawTypes[j].Namespace
-	})
-
-	return &APIManifest{
+	manifest := &APIManifest{
 		Release:    filepath.Base(filepath.Dir(filepath.Dir(managedDir))),
 		Timestamp:  time.Now().UTC().Format(time.RFC3339),
 		Assemblies: assemblyNames,
 		Types:      rawTypes,
-	}, nil
+	}
+
+	NormalizeManifest(manifest)
+	return manifest, nil
 }
 
 func SearchTypes(manifest *APIManifest, query string) []TypeInfo {
@@ -184,7 +299,8 @@ func SearchTypes(manifest *APIManifest, query string) []TypeInfo {
 			continue
 		}
 		for _, m := range t.Methods {
-			if strings.Contains(strings.ToLower(m.Name), q) {
+			if strings.Contains(strings.ToLower(m.Name), q) ||
+				strings.Contains(strings.ToLower(m.CanonicalSignature), q) {
 				matches = append(matches, t)
 				break
 			}
@@ -204,6 +320,9 @@ func InspectType(manifest *APIManifest, typeName string) *TypeInfo {
 }
 
 func DiffManifests(a, b *APIManifest) *APIDiffReport {
+	NormalizeManifest(a)
+	NormalizeManifest(b)
+
 	report := &APIDiffReport{
 		ReleaseA: a.Release,
 		ReleaseB: b.Release,
@@ -232,23 +351,47 @@ func DiffManifests(a, b *APIManifest) *APIDiffReport {
 			continue
 		}
 
-		methodsA := make(map[string]bool)
+		methodsABySig := make(map[string]MethodInfo)
+		methodsAByName := make(map[string][]MethodInfo)
 		for _, m := range ta.Methods {
-			methodsA[m.Name] = true
-		}
-		methodsB := make(map[string]bool)
-		for _, m := range tb.Methods {
-			methodsB[m.Name] = true
+			methodsABySig[m.CanonicalSignature] = m
+			methodsAByName[m.Name] = append(methodsAByName[m.Name], m)
 		}
 
-		for m := range methodsB {
-			if !methodsA[m] {
-				report.AddedMethods = append(report.AddedMethods, k+"."+m)
+		methodsBBySig := make(map[string]MethodInfo)
+		methodsBByName := make(map[string][]MethodInfo)
+		for _, m := range tb.Methods {
+			methodsBBySig[m.CanonicalSignature] = m
+			methodsBByName[m.Name] = append(methodsBByName[m.Name], m)
+		}
+
+		// Detect added and changed methods
+		for sig, mb := range methodsBBySig {
+			if _, exactMatch := methodsABySig[sig]; !exactMatch {
+				// Check if there are methods with the same name in A (changed overload)
+				if oldList, hasName := methodsAByName[mb.Name]; hasName && len(oldList) > 0 {
+					// Correlate with the closest old overload
+					report.ChangedOverloads = append(report.ChangedOverloads, ChangedOverload{
+						TypeName:       k,
+						MethodName:     mb.Name,
+						OldSignature:   oldList[0].CanonicalSignature,
+						OldSignatureID: oldList[0].SignatureID,
+						NewSignature:   mb.CanonicalSignature,
+						NewSignatureID: mb.SignatureID,
+					})
+				} else {
+					report.AddedMethods = append(report.AddedMethods, fmt.Sprintf("%s.%s [%s]", k, mb.CanonicalSignature, mb.SignatureID))
+				}
 			}
 		}
-		for m := range methodsA {
-			if !methodsB[m] {
-				report.RemovedMethods = append(report.RemovedMethods, k+"."+m)
+
+		// Detect removed methods
+		for sig, ma := range methodsABySig {
+			if _, exactMatch := methodsBBySig[sig]; !exactMatch {
+				// If not mapped as changed overload
+				if _, hasName := methodsBByName[ma.Name]; !hasName {
+					report.RemovedMethods = append(report.RemovedMethods, fmt.Sprintf("%s.%s [%s]", k, ma.CanonicalSignature, ma.SignatureID))
+				}
 			}
 		}
 	}
@@ -257,6 +400,12 @@ func DiffManifests(a, b *APIManifest) *APIDiffReport {
 	sort.Strings(report.RemovedTypes)
 	sort.Strings(report.AddedMethods)
 	sort.Strings(report.RemovedMethods)
+	sort.Slice(report.ChangedOverloads, func(i, j int) bool {
+		if report.ChangedOverloads[i].TypeName == report.ChangedOverloads[j].TypeName {
+			return report.ChangedOverloads[i].NewSignature < report.ChangedOverloads[j].NewSignature
+		}
+		return report.ChangedOverloads[i].TypeName < report.ChangedOverloads[j].TypeName
+	})
 
 	return report
 }
