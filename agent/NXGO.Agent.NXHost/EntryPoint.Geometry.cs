@@ -10,6 +10,18 @@ using NXOpen;
 
 namespace NXGO.Agent.NXHost;
 
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using NXGO.Agent.Core;
+using NXOpen;
+
+namespace NXGO.Agent.NXHost;
+
 public static partial class EntryPoint
 {
     private const int MaxProducedHandlesPerRequest = 256;
@@ -17,7 +29,7 @@ public static partial class EntryPoint
     private static Task<byte[]> StartCreateBlock(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "part_ref", "Part");
-        RequireCreateOnlyFeatureOptions(payload);
+        ValidateBooleanFeatureOptions(payload);
         var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
         var length = GetDouble(payload, "length", 100.0);
         var width = GetDouble(payload, "width", 100.0);
@@ -41,7 +53,7 @@ public static partial class EntryPoint
                     length.ToString("G", CultureInfo.InvariantCulture),
                     width.ToString("G", CultureInfo.InvariantCulture),
                     height.ToString("G", CultureInfo.InvariantCulture));
-                builder.BooleanOption.Type = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Create;
+                ApplyBooleanOption(part, builder.BooleanOption, payload);
 
                 var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
                 var bodies = feature.GetBodies();
@@ -69,7 +81,7 @@ public static partial class EntryPoint
     private static Task<byte[]> StartCreateCylinder(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var partHandle = RequireHandle(payload, "part_ref", "Part");
-        RequireCreateOnlyFeatureOptions(payload);
+        ValidateBooleanFeatureOptions(payload);
         var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
         var direction = GetDoubleArray(payload, "direction", 3, new[] { 0.0, 0.0, 1.0 });
         if (direction[0] == 0 && direction[1] == 0 && direction[2] == 0) direction[2] = 1.0;
@@ -93,7 +105,7 @@ public static partial class EntryPoint
                 builder.Height.RightHandSide = height.ToString("G", CultureInfo.InvariantCulture);
                 builder.Origin = new Point3d(origin[0], origin[1], origin[2]);
                 builder.Direction = new Vector3d(direction[0], direction[1], direction[2]);
-                builder.BooleanOption.Type = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Create;
+                ApplyBooleanOption(part, builder.BooleanOption, payload);
 
                 var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
                 var bodies = feature.GetBodies();
@@ -286,24 +298,120 @@ public static partial class EntryPoint
         return imperial ? GeometryUnitContract.InchPound : GeometryUnitContract.MillimeterKilogram;
     }
 
-    private static void RequireCreateOnlyFeatureOptions(Dictionary<string, object> payload)
+    private static void ValidateBooleanFeatureOptions(Dictionary<string, object> payload)
     {
         var booleanOp = GetString(payload, "boolean_op", "create").Trim().ToLowerInvariant();
-        if (booleanOp.Length > 0 && booleanOp != "create")
+        if (string.IsNullOrEmpty(booleanOp) || booleanOp == "create")
         {
-            throw new ArgumentException("boolean operation is not implemented by the canonical backend; only create is accepted");
+            if (payload.TryGetValue("target_body_ref", out var target) && target != null)
+            {
+                throw new ArgumentException("target_body_ref cannot be specified with boolean create");
+            }
+            return;
         }
-        object? target;
-        if (payload.TryGetValue("target_body_ref", out target) && target != null)
+
+        switch (booleanOp)
         {
-            throw new ArgumentException("target_body_ref is not implemented by the canonical backend");
+            case "unite":
+            case "subtract":
+            case "intersect":
+                if (!payload.ContainsKey("target_body_ref") || payload["target_body_ref"] == null)
+                {
+                    throw new ArgumentException("target_body_ref is required for boolean operation " + booleanOp);
+                }
+                RequireHandle(payload, "target_body_ref", "Body");
+                break;
+            default:
+                throw new ArgumentException("unsupported boolean operation: " + booleanOp + "; supported: create, unite, subtract, intersect");
         }
+    }
+
+    private static void ApplyBooleanOption(Part part, NXOpen.GeometricUtilities.BooleanOperation booleanOption, Dictionary<string, object> payload)
+    {
+        var booleanOp = GetString(payload, "boolean_op", "create").Trim().ToLowerInvariant();
+        if (string.IsNullOrEmpty(booleanOp) || booleanOp == "create")
+        {
+            booleanOption.Type = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Create;
+            return;
+        }
+
+        NXOpen.GeometricUtilities.BooleanOperation.BooleanType boolType;
+        switch (booleanOp)
+        {
+            case "unite":
+                boolType = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Unite;
+                break;
+            case "subtract":
+                boolType = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Subtract;
+                break;
+            case "intersect":
+                boolType = NXOpen.GeometricUtilities.BooleanOperation.BooleanType.Intersect;
+                break;
+            default:
+                throw new ArgumentException("unsupported boolean operation: " + booleanOp);
+        }
+
+        var targetHandle = RequireHandle(payload, "target_body_ref", "Body");
+        var targetBody = (Body)Registry.Resolve(targetHandle, "Body");
+        booleanOption.SetBooleanOperationAndBody(boolType, targetBody);
+    }
+
+    private static Task<byte[]> StartBooleanOperation(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var targetHandle = RequireHandle(payload, "target_body_ref", "Body");
+        var toolHandles = ExtractHandleList(payload, "tool_body_refs", "Body");
+        if (toolHandles.Count == 0) throw new ArgumentException("at least one tool body is required for boolean operation");
+        var opStr = GetString(payload, "op", "unite").Trim().ToLowerInvariant();
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            var targetBody = (Body)Registry.Resolve(targetHandle, "Body");
+            var toolBodies = toolHandles.Select(h => (Body)Registry.Resolve(h, "Body")).ToArray();
+
+            Journal.MarkStarted(requestId);
+            NXOpen.Features.BooleanFeature[] boolFeatures;
+            bool nonAssoc = false;
+            bool unparam = false;
+
+            switch (opStr)
+            {
+                case "unite":
+                    boolFeatures = part.Features.CreateUniteFeature(targetBody, false, toolBodies, false, false, out nonAssoc, out unparam);
+                    break;
+                case "subtract":
+                    boolFeatures = part.Features.CreateSubtractFeature(targetBody, false, toolBodies, false, false, out nonAssoc, out unparam);
+                    break;
+                default:
+                    throw new ArgumentException("standalone boolean operation currently supports 'unite' and 'subtract': " + opStr);
+            }
+
+            if (boolFeatures == null || boolFeatures.Length == 0)
+            {
+                throw new InvalidOperationException("boolean operation produced no feature");
+            }
+
+            var feature = boolFeatures[0];
+            var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+            var bodies = feature.GetBodies();
+            var body = bodies != null && bodies.Length > 0 ? bodies[0] : targetBody;
+            var bodyHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["feature_ref"] = FormatHandle(featureHandle, feature),
+                ["body_ref"] = FormatHandle(bodyHandle, body),
+                ["feature_name"] = feature.GetFeatureName(),
+                ["feature_type"] = feature.FeatureType,
+            });
+        }, token));
     }
 
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
-        object? value;
-        if (!source.TryGetValue(key, out value) || value == null) return defaultValue;
+        if (!source.TryGetValue(key, out var value) || value == null) return defaultValue;
         return Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }
 

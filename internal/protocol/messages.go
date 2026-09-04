@@ -405,6 +405,20 @@ type FeatureCreateCylinderResponse struct {
 	FeatureName string           `json:"feature_name"`
 }
 
+type FeatureBooleanRequest struct {
+	PartRef       *ObjectHandleWire  `json:"part_ref,omitempty"`
+	Op            string             `json:"op"` // "unite", "subtract", "intersect"
+	TargetBodyRef *ObjectHandleWire  `json:"target_body_ref"`
+	ToolBodyRefs  []ObjectHandleWire `json:"tool_body_refs"`
+}
+
+type FeatureBooleanResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
+
 type GeometryQueryMassPropertiesRequest struct {
 	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`
 	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`

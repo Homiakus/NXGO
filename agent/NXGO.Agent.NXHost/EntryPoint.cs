@@ -34,7 +34,7 @@ public static partial class EntryPoint
         "nx.ping", "session.info", "part.new", "part.open", "part.save", "part.close",
         "part.query_summary", "part.get_attributes", "part.set_attributes", "part.bulk_metadata",
         "part.query_load_status",
-        "object.release", "feature.create_block", "feature.create_cylinder",
+        "object.release", "feature.create_block", "feature.create_cylinder", "feature.boolean",
         "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
         "assembly.query_tree", "assembly.query_bom", "assembly.remove_component",
@@ -47,6 +47,7 @@ public static partial class EntryPoint
         ["part.set_attributes"] = MutationOutcomeClass.Transactional,
         ["object.release"] = MutationOutcomeClass.DeterministicIdempotent,
         ["feature.create_block"] = MutationOutcomeClass.Transactional, ["feature.create_cylinder"] = MutationOutcomeClass.Transactional,
+        ["feature.boolean"] = MutationOutcomeClass.Transactional,
         ["transaction.begin"] = MutationOutcomeClass.Transactional, ["transaction.commit"] = MutationOutcomeClass.Transactional,
         ["transaction.rollback"] = MutationOutcomeClass.Transactional,
         ["assembly.add_component"] = MutationOutcomeClass.Transactional, ["assembly.remove_component"] = MutationOutcomeClass.Transactional,
@@ -293,6 +294,8 @@ public static partial class EntryPoint
                     return StartCreateBlock(executor, requestId, requestPayload, token);
                 case "feature.create_cylinder":
                     return StartCreateCylinder(executor, requestId, requestPayload, token);
+                case "feature.boolean":
+                    return StartBooleanOperation(executor, requestId, requestPayload, token);
                 case "part.query_bodies":
                     return StartQueryBodies(executor, requestId, requestPayload, token);
                 case "geometry.query_mass_properties":
@@ -996,6 +999,22 @@ public static partial class EntryPoint
             throw new StaleObjectHandleException($"wrong object kind for {token.ObjectId}: got {token.Kind}, expected {expectedKind}");
         }
         return token;
+    }
+
+    private static List<ObjectHandleToken> ExtractHandleList(Dictionary<string, object> payload, string key, string expectedKind)
+    {
+        var list = new List<ObjectHandleToken>();
+        if (payload.TryGetValue(key, out var raw) && raw is IEnumerable<object> items)
+        {
+            foreach (var it in items)
+            {
+                if (it is Dictionary<string, object> dict)
+                {
+                    list.Add(RequireHandle(new Dictionary<string, object> { ["item"] = dict }, "item", expectedKind));
+                }
+            }
+        }
+        return list;
     }
 
     private static Dictionary<string, object> FormatHandle(ObjectHandleToken token, TaggedObject target)

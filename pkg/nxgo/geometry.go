@@ -70,16 +70,21 @@ type Body struct {
 
 func validateCreateFeatureOptions(s *Session, booleanOp string, targetBodyRef *protocol.ObjectHandleWire) error {
 	op := strings.TrimSpace(strings.ToLower(booleanOp))
-	if op != "" && op != "create" {
-		return fmt.Errorf("%w: boolean operation %q; only create is currently enforced", ErrUnsupportedFeatureOption, booleanOp)
-	}
-	if targetBodyRef != nil {
-		if err := s.validateObjectHandle(targetBodyRef, "Body"); err != nil {
-			return err
+	if op == "" || op == "create" {
+		if targetBodyRef != nil {
+			return fmt.Errorf("%w: target_body_ref cannot be specified with boolean create", ErrUnsupportedFeatureOption)
 		}
-		return fmt.Errorf("%w: target_body_ref is not yet honored by feature creation", ErrUnsupportedFeatureOption)
+		return nil
 	}
-	return nil
+	switch op {
+	case "unite", "subtract", "intersect":
+		if targetBodyRef == nil {
+			return fmt.Errorf("%w: target_body_ref is required for boolean operation %q", ErrUnsupportedFeatureOption, booleanOp)
+		}
+		return s.validateObjectHandle(targetBodyRef, "Body")
+	default:
+		return fmt.Errorf("%w: boolean operation %q; only create, unite, subtract, intersect are supported", ErrUnsupportedFeatureOption, booleanOp)
+	}
 }
 
 func (p *Part) CreateBlock(ctx context.Context, params BlockParams) (*Feature, error) {
@@ -173,6 +178,68 @@ func (p *Part) CreateCylinder(ctx context.Context, params CylinderParams) (*Feat
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
 		Type:    "Cylinder",
+	}, nil
+}
+
+type BooleanParams struct {
+	Op            string // "unite", "subtract", "intersect"
+	TargetBodyRef protocol.ObjectHandleWire
+	ToolBodyRefs  []protocol.ObjectHandleWire
+}
+
+func (p *Part) Boolean(ctx context.Context, params BooleanParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	op := strings.TrimSpace(strings.ToLower(params.Op))
+	if op != "unite" && op != "subtract" && op != "intersect" {
+		return nil, fmt.Errorf("%w: boolean op %q (supported: unite, subtract, intersect)", ErrUnsupportedFeatureOption, params.Op)
+	}
+	if err := p.session.validateObjectHandle(&params.TargetBodyRef, "Body"); err != nil {
+		return nil, err
+	}
+	if len(params.ToolBodyRefs) == 0 {
+		return nil, errors.New("at least one tool body is required for boolean operation")
+	}
+	for i := range params.ToolBodyRefs {
+		if err := p.session.validateObjectHandle(&params.ToolBodyRefs[i], "Body"); err != nil {
+			return nil, err
+		}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureBooleanRequest{
+		PartRef:       &p.Ref,
+		Op:            op,
+		TargetBodyRef: &params.TargetBodyRef,
+		ToolBodyRefs:  params.ToolBodyRefs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.boolean"),
+		Op:        "feature.boolean",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+
+	payload, err := protocol.DecodePayload[protocol.FeatureBooleanResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Feature{
+		session: p.session,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
 	}, nil
 }
 

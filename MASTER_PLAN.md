@@ -876,7 +876,7 @@ A new supported NX build can be scanned and raw bindings regenerated determinist
 - [x] body summaries foundation;
 - [x] block/cylinder foundation;
 - [x] bounding box/mass properties foundation subject to H5 correction;
-- [ ] semantic boolean create/unite/subtract/intersect;
+- [x] semantic boolean create/unite/subtract/intersect;
 - [ ] semantic hole;
 - [ ] datum/plane/axis basics;
 - [ ] sketch/profile strategy;
