@@ -200,3 +200,116 @@ func (p *Part) Summary(ctx context.Context) (*protocol.PartSummaryResponse, erro
 
 	return protocol.DecodePayload[protocol.PartSummaryResponse](resp.Payload)
 }
+
+func (p *Part) GetAttributes(ctx context.Context, titles ...string) ([]protocol.PartAttribute, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	reqData, err := protocol.EncodePayload(protocol.PartGetAttributesRequest{
+		PartRef: &p.Ref,
+		Titles:  titles,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("part.get_attributes"),
+		Op:        "part.get_attributes",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+
+	res, err := protocol.DecodePayload[protocol.PartGetAttributesResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return res.Attributes, nil
+}
+
+func (p *Part) SetAttributes(ctx context.Context, attrs []protocol.PartAttribute) (int, error) {
+	if err := p.validate(); err != nil {
+		return 0, err
+	}
+	reqData, err := protocol.EncodePayload(protocol.PartSetAttributesRequest{
+		PartRef:    &p.Ref,
+		Attributes: attrs,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("part.set_attributes"),
+		Op:        "part.set_attributes",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return 0, formatError(resp.Error)
+	}
+
+	res, err := protocol.DecodePayload[protocol.PartSetAttributesResponse](resp.Payload)
+	if err != nil {
+		return 0, err
+	}
+	return res.UpdatedCount, nil
+}
+
+func (p *Part) Metadata(ctx context.Context) (*protocol.PartMetadataEntry, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	entries, err := p.session.BulkMetadata(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	return &entries[0], nil
+}
+
+func (s *Session) BulkMetadata(ctx context.Context, parts ...*Part) ([]protocol.PartMetadataEntry, error) {
+	if err := s.validateOpen(); err != nil {
+		return nil, err
+	}
+	var refs []protocol.ObjectHandleWire
+	for _, p := range parts {
+		if p != nil {
+			refs = append(refs, p.Ref)
+		}
+	}
+	reqData, err := protocol.EncodePayload(protocol.PartBulkMetadataRequest{
+		PartRefs:          refs,
+		IncludeAttributes: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := s.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("part.bulk_metadata"),
+		Op:        "part.bulk_metadata",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+
+	res, err := protocol.DecodePayload[protocol.PartBulkMetadataResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return res.Entries, nil
+}

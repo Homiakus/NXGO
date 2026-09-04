@@ -866,9 +866,9 @@ A new supported NX build can be scanned and raw bindings regenerated determinist
 - [x] open/new/save/close foundation;
 - [x] work/display part queries foundation;
 - [x] units/basic metadata foundation;
-- [ ] batch attributes;
+- [x] batch attributes;
 - [x] explicit SaveAs/export semantics;
-- [ ] bulk metadata query;
+- [x] bulk metadata query;
 - [ ] part dependency/load-status diagnostics.
 
 # D2 — Modeling

@@ -272,6 +272,62 @@ type PartSummaryResponse struct {
 	NativeTag      uint32 `json:"native_tag,omitempty"`
 }
 
+// Batch attributes & bulk metadata (Phase D1)
+
+type AttributeType string
+
+const (
+	AttrTypeString  AttributeType = "string"
+	AttrTypeInteger AttributeType = "integer"
+	AttrTypeReal    AttributeType = "real"
+	AttrTypeBoolean AttributeType = "boolean"
+)
+
+type PartAttribute struct {
+	Title string        `json:"title"`
+	Type  AttributeType `json:"type"`
+	Value any           `json:"value"`
+}
+
+type PartGetAttributesRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+	Titles  []string          `json:"titles,omitempty"`
+}
+
+type PartGetAttributesResponse struct {
+	Attributes []PartAttribute `json:"attributes"`
+}
+
+type PartSetAttributesRequest struct {
+	PartRef    *ObjectHandleWire `json:"part_ref,omitempty"`
+	Attributes []PartAttribute   `json:"attributes"`
+}
+
+type PartSetAttributesResponse struct {
+	UpdatedCount int `json:"updated_count"`
+}
+
+type PartMetadataEntry struct {
+	PartRef        ObjectHandleWire `json:"part_ref"`
+	Name           string           `json:"name"`
+	FullPath       string           `json:"full_path,omitempty"`
+	Units          string           `json:"units"`
+	IsModified     bool             `json:"is_modified"`
+	BodyCount      int              `json:"body_count"`
+	FeatureCount   int              `json:"feature_count"`
+	ComponentCount int              `json:"component_count"`
+	Attributes     []PartAttribute  `json:"attributes,omitempty"`
+}
+
+type PartBulkMetadataRequest struct {
+	PartRefs          []ObjectHandleWire `json:"part_refs,omitempty"`
+	IncludeAttributes bool               `json:"include_attributes,omitempty"`
+}
+
+type PartBulkMetadataResponse struct {
+	Entries []PartMetadataEntry `json:"entries"`
+}
+
 // Object registry operation payloads (Phase 5)
 
 type ObjectReleaseRequest struct {

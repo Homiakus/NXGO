@@ -32,7 +32,8 @@ public static partial class EntryPoint
     private static readonly HashSet<string> SupportedOperations = new HashSet<string>(StringComparer.Ordinal)
     {
         "nx.ping", "session.info", "part.new", "part.open", "part.save", "part.close",
-        "part.query_summary", "object.release", "feature.create_block", "feature.create_cylinder",
+        "part.query_summary", "part.get_attributes", "part.set_attributes", "part.bulk_metadata",
+        "object.release", "feature.create_block", "feature.create_cylinder",
         "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
         "assembly.query_tree", "assembly.query_bom", "assembly.remove_component",
@@ -42,6 +43,7 @@ public static partial class EntryPoint
     {
         ["part.new"] = MutationOutcomeClass.Transactional, ["part.open"] = MutationOutcomeClass.Transactional,
         ["part.save"] = MutationOutcomeClass.Transactional, ["part.close"] = MutationOutcomeClass.Transactional,
+        ["part.set_attributes"] = MutationOutcomeClass.Transactional,
         ["object.release"] = MutationOutcomeClass.DeterministicIdempotent,
         ["feature.create_block"] = MutationOutcomeClass.Transactional, ["feature.create_cylinder"] = MutationOutcomeClass.Transactional,
         ["transaction.begin"] = MutationOutcomeClass.Transactional, ["transaction.commit"] = MutationOutcomeClass.Transactional,
@@ -276,6 +278,12 @@ public static partial class EntryPoint
                     return StartPartClose(executor, requestId, requestPayload, token);
                 case "part.query_summary":
                     return StartPartSummary(executor, requestId, requestPayload, token);
+                case "part.get_attributes":
+                    return StartPartGetAttributes(executor, requestId, requestPayload, token);
+                case "part.set_attributes":
+                    return StartPartSetAttributes(executor, requestId, requestPayload, token);
+                case "part.bulk_metadata":
+                    return StartPartBulkMetadata(session, executor, requestId, requestPayload, token);
                 case "object.release":
                     return StartObjectRelease(executor, requestId, requestPayload, token);
                 case "feature.create_block":
@@ -500,6 +508,219 @@ public static partial class EntryPoint
                 ["feature_count"] = featureCount,
                 ["component_count"] = componentCount,
                 ["native_tag"] = nativeTag,
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartPartGetAttributes(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var handle = RequireHandle(payload, "part_ref", "Part");
+        List<string>? titlesFilter = null;
+        if (payload.TryGetValue("titles", out var titlesVal) && titlesVal is IEnumerable<object> titleList)
+        {
+            titlesFilter = titleList.Select(x => x?.ToString() ?? string.Empty).Where(x => !string.IsNullOrEmpty(x)).ToList();
+        }
+
+        return MapRead(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(handle, "Part");
+            var result = new List<Dictionary<string, object>>();
+
+            if (titlesFilter != null && titlesFilter.Count > 0)
+            {
+                foreach (var title in titlesFilter)
+                {
+                    try
+                    {
+                        var strVal = part.GetStringAttribute(title);
+                        result.Add(new Dictionary<string, object> { ["title"] = title, ["type"] = "string", ["value"] = strVal });
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            var intVal = part.GetIntegerAttribute(title);
+                            result.Add(new Dictionary<string, object> { ["title"] = title, ["type"] = "integer", ["value"] = intVal });
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                var realVal = part.GetRealAttribute(title);
+                                result.Add(new Dictionary<string, object> { ["title"] = title, ["type"] = "real", ["value"] = realVal });
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                try
+                {
+                    var userAttrs = part.GetUserAttributes();
+                    if (userAttrs != null)
+                    {
+                        foreach (var attr in userAttrs)
+                        {
+                            object val = attr.StringValue ?? (object?)attr.IntegerValue ?? attr.RealValue ?? string.Empty;
+                            string typeStr = attr.Type.ToString().ToLowerInvariant();
+                            result.Add(new Dictionary<string, object>
+                            {
+                                ["title"] = attr.Title ?? string.Empty,
+                                ["type"] = typeStr,
+                                ["value"] = val
+                            });
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["attributes"] = result
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartPartSetAttributes(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var handle = RequireHandle(payload, "part_ref", "Part");
+        if (!payload.TryGetValue("attributes", out var attrsVal) || !(attrsVal is IEnumerable<object> attrList))
+        {
+            return Task.FromResult(FormatError(requestId, "INVALID_ARGUMENT", "attributes list is required", false));
+        }
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(handle, "Part");
+            Journal.MarkStarted(requestId); PersistJournalOrThrow();
+            int updated = 0;
+
+            foreach (var item in attrList)
+            {
+                if (item is Dictionary<string, object> dict && dict.TryGetValue("title", out var titleObj) && titleObj != null)
+                {
+                    var title = titleObj.ToString()!;
+                    var type = dict.TryGetValue("type", out var typeObj) ? typeObj?.ToString()?.ToLowerInvariant() : "string";
+                    dict.TryGetValue("value", out var valObj);
+
+                    switch (type)
+                    {
+                        case "integer":
+                            part.SetAttribute(title, Convert.ToInt32(valObj, CultureInfo.InvariantCulture));
+                            break;
+                        case "real":
+                            part.SetAttribute(title, Convert.ToDouble(valObj, CultureInfo.InvariantCulture));
+                            break;
+                        default:
+                            part.SetAttribute(title, valObj?.ToString() ?? string.Empty);
+                            break;
+                    }
+                    updated++;
+                }
+            }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["updated_count"] = updated
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartPartBulkMetadata(Session session, NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var refs = new List<ObjectHandleToken>();
+        if (payload.TryGetValue("part_refs", out var pRefsObj) && pRefsObj is IEnumerable<object> pList)
+        {
+            foreach (var item in pList)
+            {
+                if (item is Dictionary<string, object> dict)
+                {
+                    refs.Add(RequireHandle(new Dictionary<string, object> { ["part"] = dict }, "part", "Part"));
+                }
+            }
+        }
+        var includeAttrs = payload.TryGetValue("include_attributes", out var incVal) && Convert.ToBoolean(incVal);
+
+        return MapRead(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var targetParts = new List<Part>();
+            if (refs.Count > 0)
+            {
+                foreach (var h in refs)
+                {
+                    targetParts.Add((Part)Registry.Resolve(h, "Part"));
+                }
+            }
+            else
+            {
+                foreach (Part p in session.Parts)
+                {
+                    targetParts.Add(p);
+                }
+            }
+
+            var entries = new List<Dictionary<string, object>>();
+            foreach (var part in targetParts)
+            {
+                var bodyCount = 0;
+                foreach (Body _ in part.Bodies) bodyCount++;
+                var featureCount = 0;
+                foreach (NXOpen.Features.Feature _ in part.Features) featureCount++;
+                var componentCount = 0;
+                if (part.ComponentAssembly != null && part.ComponentAssembly.RootComponent != null)
+                {
+                    componentCount = part.ComponentAssembly.RootComponent.GetChildren().Length;
+                }
+
+                var partHandle = Registry.GetOrRegister(part, "Part");
+                var entry = new Dictionary<string, object>
+                {
+                    ["part_ref"] = FormatHandle(partHandle, part),
+                    ["name"] = part.Name,
+                    ["full_path"] = part.FullPath ?? string.Empty,
+                    ["units"] = part.PartUnits.ToString(),
+                    ["is_modified"] = false,
+                    ["body_count"] = bodyCount,
+                    ["feature_count"] = featureCount,
+                    ["component_count"] = componentCount,
+                };
+
+                if (includeAttrs)
+                {
+                    var attrList = new List<Dictionary<string, object>>();
+                    try
+                    {
+                        var userAttrs = part.GetUserAttributes();
+                        if (userAttrs != null)
+                        {
+                            foreach (var attr in userAttrs)
+                            {
+                                object val = attr.StringValue ?? (object?)attr.IntegerValue ?? attr.RealValue ?? string.Empty;
+                                attrList.Add(new Dictionary<string, object>
+                                {
+                                    ["title"] = attr.Title ?? string.Empty,
+                                    ["type"] = attr.Type.ToString().ToLowerInvariant(),
+                                    ["value"] = val
+                                });
+                            }
+                        }
+                    }
+                    catch { }
+                    entry["attributes"] = attrList;
+                }
+
+                entries.Add(entry);
+            }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["entries"] = entries
             });
         }, token));
     }
