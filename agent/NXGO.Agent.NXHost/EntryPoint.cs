@@ -36,6 +36,7 @@ public static partial class EntryPoint
         "part.query_load_status",
         "object.release", "feature.create_block", "feature.create_cylinder", "feature.boolean",
         "feature.create_hole", "datum.create_plane", "datum.create_axis", "datum.create_csys",
+        "sketch.create", "sketch.add_geometry", "sketch.query_status", "sketch.create_profile",
         "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
         "assembly.query_tree", "assembly.query_bom", "assembly.remove_component",
@@ -51,6 +52,8 @@ public static partial class EntryPoint
         ["feature.boolean"] = MutationOutcomeClass.Transactional, ["feature.create_hole"] = MutationOutcomeClass.Transactional,
         ["datum.create_plane"] = MutationOutcomeClass.Transactional, ["datum.create_axis"] = MutationOutcomeClass.Transactional,
         ["datum.create_csys"] = MutationOutcomeClass.Transactional,
+        ["sketch.create"] = MutationOutcomeClass.Transactional, ["sketch.add_geometry"] = MutationOutcomeClass.Transactional,
+        ["sketch.create_profile"] = MutationOutcomeClass.Transactional,
         ["transaction.begin"] = MutationOutcomeClass.Transactional, ["transaction.commit"] = MutationOutcomeClass.Transactional,
         ["transaction.rollback"] = MutationOutcomeClass.Transactional,
         ["assembly.add_component"] = MutationOutcomeClass.Transactional, ["assembly.remove_component"] = MutationOutcomeClass.Transactional,
@@ -307,6 +310,14 @@ public static partial class EntryPoint
                     return StartDatumCreateAxis(executor, requestId, requestPayload, token);
                 case "datum.create_csys":
                     return StartDatumCreateCsys(executor, requestId, requestPayload, token);
+                case "sketch.create":
+                    return StartSketchCreate(executor, requestId, requestPayload, token);
+                case "sketch.add_geometry":
+                    return StartSketchAddGeometry(executor, requestId, requestPayload, token);
+                case "sketch.query_status":
+                    return StartSketchQueryStatus(executor, requestId, requestPayload, token);
+                case "sketch.create_profile":
+                    return StartProfileCreate(executor, requestId, requestPayload, token);
                 case "part.query_bodies":
                     return StartQueryBodies(executor, requestId, requestPayload, token);
                 case "geometry.query_mass_properties":
@@ -581,7 +592,7 @@ public static partial class EntryPoint
                     {
                         foreach (var attr in userAttrs)
                         {
-                            object val = attr.StringValue ?? (object?)attr.IntegerValue ?? attr.RealValue ?? string.Empty;
+                            object val = !string.IsNullOrEmpty(attr.StringValue) ? (object)attr.StringValue : (attr.Type == NXObject.AttributeType.Integer ? (object)attr.IntegerValue : (object)attr.RealValue);
                             string typeStr = attr.Type.ToString().ToLowerInvariant();
                             result.Add(new Dictionary<string, object>
                             {
@@ -718,7 +729,7 @@ public static partial class EntryPoint
                         {
                             foreach (var attr in userAttrs)
                             {
-                                object val = attr.StringValue ?? (object?)attr.IntegerValue ?? attr.RealValue ?? string.Empty;
+                                object val = !string.IsNullOrEmpty(attr.StringValue) ? (object)attr.StringValue : (attr.Type == NXObject.AttributeType.Integer ? (object)attr.IntegerValue : (object)attr.RealValue);
                                 attrList.Add(new Dictionary<string, object>
                                 {
                                     ["title"] = attr.Title ?? string.Empty,

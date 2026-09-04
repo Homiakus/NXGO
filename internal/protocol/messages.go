@@ -481,6 +481,79 @@ type DatumCreateCsysResponse struct {
 	Name       string           `json:"name"`
 }
 
+type SketchLine2DWire struct {
+	Start [2]float64 `json:"start"`
+	End   [2]float64 `json:"end"`
+}
+
+type SketchCircle2DWire struct {
+	Center [2]float64 `json:"center"`
+	Radius float64    `json:"radius"`
+}
+
+type SketchArc2DWire struct {
+	Center     [2]float64 `json:"center"`
+	Radius     float64    `json:"radius"`
+	StartAngle float64    `json:"start_angle"`
+	EndAngle   float64    `json:"end_angle"`
+}
+
+type SketchRect2DWire struct {
+	Origin [2]float64 `json:"origin"`
+	Width  float64    `json:"width"`
+	Height float64    `json:"height"`
+}
+
+type SketchCreateRequest struct {
+	PartRef  *ObjectHandleWire `json:"part_ref,omitempty"`
+	Name     string            `json:"name,omitempty"`
+	PlaneRef *ObjectHandleWire `json:"plane_ref,omitempty"`
+}
+
+type SketchCreateResponse struct {
+	SketchRef  ObjectHandleWire `json:"sketch_ref"`
+	FeatureRef ObjectHandleWire `json:"feature_ref"`
+	Name       string           `json:"name"`
+}
+
+type SketchAddGeometryRequest struct {
+	PartRef    *ObjectHandleWire    `json:"part_ref,omitempty"`
+	SketchRef  *ObjectHandleWire    `json:"sketch_ref"`
+	Lines      []SketchLine2DWire   `json:"lines,omitempty"`
+	Circles    []SketchCircle2DWire `json:"circles,omitempty"`
+	Arcs       []SketchArc2DWire    `json:"arcs,omitempty"`
+	Rectangles []SketchRect2DWire   `json:"rectangles,omitempty"`
+}
+
+type SketchAddGeometryResponse struct {
+	AddedCount int `json:"added_count"`
+	CurveCount int `json:"curve_count"`
+}
+
+type SketchQueryStatusRequest struct {
+	SketchRef *ObjectHandleWire `json:"sketch_ref"`
+}
+
+type SketchQueryStatusResponse struct {
+	Status     string `json:"status"`
+	DOFNeeded  int    `json:"dof_needed"`
+	CurveCount int    `json:"curve_count"`
+}
+
+type ProfileCreateRequest struct {
+	PartRef           *ObjectHandleWire `json:"part_ref,omitempty"`
+	SketchRef         *ObjectHandleWire `json:"sketch_ref"`
+	ChainingTolerance float64           `json:"chaining_tolerance,omitempty"`
+	DistanceTolerance float64           `json:"distance_tolerance,omitempty"`
+}
+
+type ProfileCreateResponse struct {
+	ProfileRef ObjectHandleWire `json:"profile_ref"`
+	Name       string           `json:"name"`
+	LoopCount  int              `json:"loop_count"`
+}
+
+
 
 
 type GeometryQueryMassPropertiesRequest struct {

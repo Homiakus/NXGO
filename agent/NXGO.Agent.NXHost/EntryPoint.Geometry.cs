@@ -643,6 +643,286 @@ public static partial class EntryPoint
         }, token));
     }
 
+    private static Task<byte[]> StartSketchCreate(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var name = GetString(payload, "name", "SKETCH");
+        ObjectHandleToken? planeHandle = null;
+        if (payload.TryGetValue("plane_ref", out var pRef) && pRef is Dictionary<string, object> pRefDict && pRefDict.Count > 0)
+        {
+            planeHandle = RequireHandle(new Dictionary<string, object> { ["plane"] = pRefDict }, "plane", "DatumPlane");
+        }
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            using (var scope = new BuilderScope<NXOpen.SketchInPlaceBuilder>(
+                part.Sketches.CreateNewSketchInPlaceBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                if (planeHandle != null)
+                {
+                    var datum = (DatumPlane)Registry.Resolve(planeHandle, "DatumPlane");
+                    builder.PlaneReference = part.Planes.CreatePlane(datum.Origin, datum.Normal, NXOpen.SmartObject.UpdateOption.WithinModeling);
+                }
+                else
+                {
+                    builder.PlaneReference = part.Planes.CreatePlane(new Point3d(0, 0, 0), new Vector3d(0, 0, 1), NXOpen.SmartObject.UpdateOption.WithinModeling);
+                }
+                builder.SketchOrigin = part.Points.CreatePoint(new Point3d(0, 0, 0));
+
+                var sketch = scope.CommitOnce(b => (NXOpen.Sketch)b.Commit());
+                if (sketch == null) throw new InvalidOperationException("failed to commit sketch in place");
+
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    try { sketch.SetName(name); } catch { }
+                }
+
+                var sketchHandle = Registry.Register(sketch, "Sketch", ownerObjectId: partHandle.ObjectId);
+                var feat = sketch.Feature;
+                var featHandle = feat != null ? Registry.Register(feat, "Feature", ownerObjectId: partHandle.ObjectId) : null;
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["sketch_ref"] = FormatHandle(sketchHandle, sketch),
+                    ["feature_ref"] = featHandle != null ? FormatHandle(featHandle, feat!) : new Dictionary<string, object>(),
+                    ["name"] = sketch.Name ?? name,
+                });
+            }
+        }, token));
+    }
+
+    private static Task<byte[]> StartSketchAddGeometry(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var sketchHandle = RequireHandle(payload, "sketch_ref", "Sketch");
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var sketch = (NXOpen.Sketch)Registry.Resolve(sketchHandle, "Sketch");
+            Journal.MarkStarted(requestId);
+
+            var part = (Part)sketch.OwningPart;
+            sketch.Activate(NXOpen.Sketch.ViewReorient.False);
+            int addedCount = 0;
+
+            try
+            {
+                // Lines
+                if (payload.TryGetValue("lines", out var linesRaw) && linesRaw is IEnumerable<object> linesList)
+                {
+                    foreach (var item in linesList)
+                    {
+                        if (item is Dictionary<string, object> lineDict)
+                        {
+                            var start = GetDoubleArray(lineDict, "start", 2, new[] { 0.0, 0.0 });
+                            var end = GetDoubleArray(lineDict, "end", 2, new[] { 0.0, 0.0 });
+                            var line = part.Curves.CreateLine(new Point3d(start[0], start[1], 0), new Point3d(end[0], end[1], 0));
+                            sketch.AddGeometry(line, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            addedCount++;
+                        }
+                    }
+                }
+
+                // Circles
+                if (payload.TryGetValue("circles", out var circlesRaw) && circlesRaw is IEnumerable<object> circlesList)
+                {
+                    foreach (var item in circlesList)
+                    {
+                        if (item is Dictionary<string, object> circleDict)
+                        {
+                            var center = GetDoubleArray(circleDict, "center", 2, new[] { 0.0, 0.0 });
+                            var radius = GetDouble(circleDict, "radius", 10.0);
+                            var circle = part.Curves.CreateArc(
+                                new Point3d(center[0], center[1], 0),
+                                new Vector3d(1, 0, 0),
+                                new Vector3d(0, 1, 0),
+                                radius, 0, 2 * Math.PI);
+                            sketch.AddGeometry(circle, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            addedCount++;
+                        }
+                    }
+                }
+
+                // Arcs
+                if (payload.TryGetValue("arcs", out var arcsRaw) && arcsRaw is IEnumerable<object> arcsList)
+                {
+                    foreach (var item in arcsList)
+                    {
+                        if (item is Dictionary<string, object> arcDict)
+                        {
+                            var center = GetDoubleArray(arcDict, "center", 2, new[] { 0.0, 0.0 });
+                            var radius = GetDouble(arcDict, "radius", 10.0);
+                            var startAngle = GetDouble(arcDict, "start_angle", 0.0);
+                            var endAngle = GetDouble(arcDict, "end_angle", Math.PI);
+                            var arc = part.Curves.CreateArc(
+                                new Point3d(center[0], center[1], 0),
+                                new Vector3d(1, 0, 0),
+                                new Vector3d(0, 1, 0),
+                                radius, startAngle, endAngle);
+                            sketch.AddGeometry(arc, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            addedCount++;
+                        }
+                    }
+                }
+
+                // Rectangles
+                if (payload.TryGetValue("rectangles", out var rectsRaw) && rectsRaw is IEnumerable<object> rectsList)
+                {
+                    foreach (var item in rectsList)
+                    {
+                        if (item is Dictionary<string, object> rectDict)
+                        {
+                            var origin = GetDoubleArray(rectDict, "origin", 2, new[] { 0.0, 0.0 });
+                            var width = GetDouble(rectDict, "width", 100.0);
+                            var height = GetDouble(rectDict, "height", 100.0);
+
+                            var p1 = new Point3d(origin[0], origin[1], 0);
+                            var p2 = new Point3d(origin[0] + width, origin[1], 0);
+                            var p3 = new Point3d(origin[0] + width, origin[1] + height, 0);
+                            var p4 = new Point3d(origin[0], origin[1] + height, 0);
+
+                            var l1 = part.Curves.CreateLine(p1, p2);
+                            var l2 = part.Curves.CreateLine(p2, p3);
+                            var l3 = part.Curves.CreateLine(p3, p4);
+                            var l4 = part.Curves.CreateLine(p4, p1);
+
+                            sketch.AddGeometry(l1, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            sketch.AddGeometry(l2, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            sketch.AddGeometry(l3, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            sketch.AddGeometry(l4, NXOpen.Sketch.InferConstraintsOption.InferCoincidentConstraints);
+                            addedCount += 4;
+                        }
+                    }
+                }
+
+                sketch.Update();
+            }
+            finally
+            {
+                sketch.Deactivate(NXOpen.Sketch.ViewReorient.False, NXOpen.Sketch.UpdateLevel.Model);
+            }
+
+            var totalCurves = sketch.GetAllGeometry()?.Length ?? addedCount;
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["added_count"] = addedCount,
+                ["curve_count"] = totalCurves,
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartSketchQueryStatus(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var sketchHandle = RequireHandle(payload, "sketch_ref", "Sketch");
+
+        return MapRead(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var sketch = (NXOpen.Sketch)Registry.Resolve(sketchHandle, "Sketch");
+
+            int dofNeeded = 0;
+            var status = sketch.GetStatus(out dofNeeded);
+            var curves = sketch.GetAllGeometry()?.Length ?? 0;
+
+            string statusStr;
+            switch (status)
+            {
+                case NXOpen.Sketch.Status.UnderConstrained:
+                    statusStr = "under_constrained";
+                    break;
+                case NXOpen.Sketch.Status.WellConstrained:
+                    statusStr = "well_constrained";
+                    break;
+                case NXOpen.Sketch.Status.OverConstrained:
+                    statusStr = "over_constrained";
+                    break;
+                case NXOpen.Sketch.Status.InconsistentlyConstrained:
+                    statusStr = "inconsistently_constrained";
+                    break;
+                default:
+                    statusStr = status.ToString().ToLowerInvariant();
+                    break;
+            }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["status"] = statusStr,
+                ["dof_needed"] = dofNeeded,
+                ["curve_count"] = curves,
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartProfileCreate(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var sketchHandle = RequireHandle(payload, "sketch_ref", "Sketch");
+        var chainTol = GetDouble(payload, "chaining_tolerance", 0.024);
+        var distTol = GetDouble(payload, "distance_tolerance", 0.024);
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            var sketch = (NXOpen.Sketch)Registry.Resolve(sketchHandle, "Sketch");
+            Journal.MarkStarted(requestId);
+
+            var section = part.Sections.CreateSection(
+                chainTol > 0 ? chainTol : 0.024,
+                distTol > 0 ? distTol : 0.024,
+                0.5);
+
+            if (sketch.Feature != null)
+            {
+                var curveRule = part.ScRuleFactory.CreateRuleCurveFeature(new NXOpen.Features.Feature[] { sketch.Feature });
+                section.AddToSection(
+                    new NXOpen.SelectionIntentRule[] { curveRule },
+                    null!, null!, null!,
+                    new Point3d(0, 0, 0),
+                    NXOpen.Section.Mode.Create, false);
+            }
+            else
+            {
+                var allGeom = sketch.GetAllGeometry();
+                var curves = new List<NXOpen.Curve>();
+                if (allGeom != null)
+                {
+                    foreach (var g in allGeom)
+                    {
+                        if (g is NXOpen.Curve c) curves.Add(c);
+                    }
+                }
+                if (curves.Count > 0)
+                {
+                    var dumbRule = part.ScRuleFactory.CreateRuleCurveDumb(curves.ToArray());
+                    section.AddToSection(
+                        new NXOpen.SelectionIntentRule[] { dumbRule },
+                        null!, null!, null!,
+                        new Point3d(0, 0, 0),
+                        NXOpen.Section.Mode.Create, false);
+                }
+            }
+
+            int loopCount = 0;
+            try { loopCount = section.GetNumberOfLoops(); } catch { }
+
+            var profHandle = Registry.Register(section, "Profile", ownerObjectId: partHandle.ObjectId);
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["profile_ref"] = FormatHandle(profHandle, section),
+                ["name"] = "Profile",
+                ["loop_count"] = loopCount,
+            });
+        }, token));
+    }
+
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
         if (!source.TryGetValue(key, out var value) || value == null) return defaultValue;
@@ -691,3 +971,4 @@ public static partial class EntryPoint
         };
     }
 }
+

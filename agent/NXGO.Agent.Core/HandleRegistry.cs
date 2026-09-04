@@ -212,6 +212,27 @@ public sealed class HandleRegistry<T> where T : class
         }
     }
 
+    public ObjectHandleToken GetOrRegister(
+        T target,
+        string kind,
+        string leaseScopeId = "",
+        string ownerObjectId = "",
+        int leaseScopeLimit = 0)
+    {
+        if (target == null) throw new ArgumentNullException(nameof(target));
+        lock (_sync)
+        {
+            foreach (var entry in _entries.Values)
+            {
+                if (ReferenceEquals(entry.Target, target) && string.Equals(entry.Token.Kind, kind, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry.Token;
+                }
+            }
+            return Register(target, kind, leaseScopeId, ownerObjectId, leaseScopeLimit);
+        }
+    }
+
     public T Resolve(ObjectHandleToken token, params string[] expectedKinds)
     {
         if (token == null) throw new StaleObjectHandleException("object handle is null");

@@ -95,6 +95,69 @@ type DatumCsys struct {
 	Name       string
 }
 
+type SketchParams struct {
+	Name     string
+	PlaneRef *protocol.ObjectHandleWire
+}
+
+type Sketch struct {
+	part       *Part
+	session    *Session
+	Ref        protocol.ObjectHandleWire
+	FeatureRef protocol.ObjectHandleWire
+	Name       string
+}
+
+type SketchLine2D struct {
+	Start [2]float64
+	End   [2]float64
+}
+
+type SketchCircle2D struct {
+	Center [2]float64
+	Radius float64
+}
+
+type SketchArc2D struct {
+	Center     [2]float64
+	Radius     float64
+	StartAngle float64
+	EndAngle   float64
+}
+
+type SketchRect2D struct {
+	Origin [2]float64
+	Width  float64
+	Height float64
+}
+
+type SketchAddGeometryParams struct {
+	Lines      []SketchLine2D
+	Circles    []SketchCircle2D
+	Arcs       []SketchArc2D
+	Rectangles []SketchRect2D
+}
+
+type SketchStatus struct {
+	Status     string
+	DOFNeeded  int
+	CurveCount int
+}
+
+type ProfileParams struct {
+	ChainingTolerance float64
+	DistanceTolerance float64
+}
+
+type Profile struct {
+	session   *Session
+	Ref       protocol.ObjectHandleWire
+	SketchRef protocol.ObjectHandleWire
+	Name      string
+	LoopCount int
+}
+
+
 
 type MassProperties struct {
 	Units     string
@@ -525,6 +588,210 @@ func (p *Part) CreateDatumCsys(ctx context.Context, params DatumCsysParams) (*Da
 		Ref:        payload.CsysRef,
 		FeatureRef: payload.FeatureRef,
 		Name:       payload.Name,
+	}, nil
+}
+
+func (p *Part) CreateSketch(ctx context.Context, params SketchParams) (*Sketch, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if params.PlaneRef != nil {
+		if err := p.session.validateObjectHandle(params.PlaneRef, "DatumPlane", "Face"); err != nil {
+			return nil, err
+		}
+	}
+	reqData, err := protocol.EncodePayload(protocol.SketchCreateRequest{
+		PartRef:  &p.Ref,
+		Name:     params.Name,
+		PlaneRef: params.PlaneRef,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("sketch.create"),
+		Op:        "sketch.create",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.SketchCreateResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Sketch{
+		part:       p,
+		session:    p.session,
+		Ref:        payload.SketchRef,
+		FeatureRef: payload.FeatureRef,
+		Name:       payload.Name,
+	}, nil
+}
+
+func (s *Sketch) validate() error {
+	if s == nil || s.session == nil || s.part == nil {
+		return ErrSessionClosed
+	}
+	return s.session.validateObjectHandle(&s.Ref, "Sketch")
+}
+
+func (s *Sketch) AddGeometry(ctx context.Context, params SketchAddGeometryParams) (*protocol.SketchAddGeometryResponse, error) {
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
+	linesWire := make([]protocol.SketchLine2DWire, len(params.Lines))
+	for i, l := range params.Lines {
+		linesWire[i] = protocol.SketchLine2DWire{Start: l.Start, End: l.End}
+	}
+	circlesWire := make([]protocol.SketchCircle2DWire, len(params.Circles))
+	for i, c := range params.Circles {
+		circlesWire[i] = protocol.SketchCircle2DWire{Center: c.Center, Radius: c.Radius}
+	}
+	arcsWire := make([]protocol.SketchArc2DWire, len(params.Arcs))
+	for i, a := range params.Arcs {
+		arcsWire[i] = protocol.SketchArc2DWire{Center: a.Center, Radius: a.Radius, StartAngle: a.StartAngle, EndAngle: a.EndAngle}
+	}
+	rectsWire := make([]protocol.SketchRect2DWire, len(params.Rectangles))
+	for i, r := range params.Rectangles {
+		rectsWire[i] = protocol.SketchRect2DWire{Origin: r.Origin, Width: r.Width, Height: r.Height}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.SketchAddGeometryRequest{
+		PartRef:    &s.part.Ref,
+		SketchRef:  &s.Ref,
+		Lines:      linesWire,
+		Circles:    circlesWire,
+		Arcs:       arcsWire,
+		Rectangles: rectsWire,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("sketch.add_geometry"),
+		Op:        "sketch.add_geometry",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.SketchAddGeometryResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (s *Sketch) AddLine(ctx context.Context, start, end [2]float64) error {
+	_, err := s.AddGeometry(ctx, SketchAddGeometryParams{
+		Lines: []SketchLine2D{{Start: start, End: end}},
+	})
+	return err
+}
+
+func (s *Sketch) AddCircle(ctx context.Context, center [2]float64, radius float64) error {
+	if radius <= 0 {
+		return errors.New("circle radius must be positive")
+	}
+	_, err := s.AddGeometry(ctx, SketchAddGeometryParams{
+		Circles: []SketchCircle2D{{Center: center, Radius: radius}},
+	})
+	return err
+}
+
+func (s *Sketch) AddArc(ctx context.Context, center [2]float64, radius, startAngle, endAngle float64) error {
+	if radius <= 0 {
+		return errors.New("arc radius must be positive")
+	}
+	_, err := s.AddGeometry(ctx, SketchAddGeometryParams{
+		Arcs: []SketchArc2D{{Center: center, Radius: radius, StartAngle: startAngle, EndAngle: endAngle}},
+	})
+	return err
+}
+
+func (s *Sketch) AddRectangle(ctx context.Context, origin [2]float64, width, height float64) error {
+	if width <= 0 || height <= 0 {
+		return errors.New("rectangle dimensions must be positive")
+	}
+	_, err := s.AddGeometry(ctx, SketchAddGeometryParams{
+		Rectangles: []SketchRect2D{{Origin: origin, Width: width, Height: height}},
+	})
+	return err
+}
+
+func (s *Sketch) QueryStatus(ctx context.Context) (*SketchStatus, error) {
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
+	reqData, err := protocol.EncodePayload(protocol.SketchQueryStatusRequest{
+		SketchRef: &s.Ref,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("sketch.query_status"),
+		Op:        "sketch.query_status",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.SketchQueryStatusResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &SketchStatus{
+		Status:     payload.Status,
+		DOFNeeded:  payload.DOFNeeded,
+		CurveCount: payload.CurveCount,
+	}, nil
+}
+
+func (s *Sketch) CreateProfile(ctx context.Context, params ProfileParams) (*Profile, error) {
+	if err := s.validate(); err != nil {
+		return nil, err
+	}
+	reqData, err := protocol.EncodePayload(protocol.ProfileCreateRequest{
+		PartRef:           &s.part.Ref,
+		SketchRef:         &s.Ref,
+		ChainingTolerance: params.ChainingTolerance,
+		DistanceTolerance: params.DistanceTolerance,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := s.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("sketch.create_profile"),
+		Op:        "sketch.create_profile",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.ProfileCreateResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Profile{
+		session:   s.session,
+		Ref:       payload.ProfileRef,
+		SketchRef: s.Ref,
+		Name:      payload.Name,
+		LoopCount: payload.LoopCount,
 	}, nil
 }
 

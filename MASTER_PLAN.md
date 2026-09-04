@@ -879,7 +879,7 @@ A new supported NX build can be scanned and raw bindings regenerated determinist
 - [x] semantic boolean create/unite/subtract/intersect;
 - [x] semantic hole;
 - [x] datum/plane/axis basics;
-- [ ] sketch/profile strategy;
+- [x] sketch/profile strategy;
 - [ ] extrude/revolve;
 - [ ] fillet/chamfer;
 - [ ] pattern;
