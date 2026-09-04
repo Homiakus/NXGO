@@ -1313,6 +1313,257 @@ public static partial class EntryPoint
         }, token));
     }
 
+    private static Task<byte[]> StartCreatePattern(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var patternType = GetString(payload, "pattern_type", "linear").Trim().ToLowerInvariant();
+
+        var featureHandles = ExtractHandleList(payload, "feature_refs", "Feature");
+        if (featureHandles.Count == 0 && payload.TryGetValue("feature_ref", out var fRaw) && fRaw is Dictionary<string, object> fDict && fDict.Count > 0)
+        {
+            featureHandles.Add(RequireHandle(new Dictionary<string, object> { ["feature"] = fDict }, "feature", "Feature"));
+        }
+        if (featureHandles.Count == 0)
+        {
+            throw new ArgumentException("either feature_refs or feature_ref must be supplied for pattern");
+        }
+
+        // linear parameters
+        var xDir = GetDoubleArray(payload, "x_direction", 3, new[] { 1.0, 0.0, 0.0 });
+        var xCount = (int)GetDouble(payload, "x_count", 2.0);
+        var xPitch = GetDouble(payload, "x_pitch", 10.0);
+        var yDir = GetDoubleArray(payload, "y_direction", 3, new[] { 0.0, 1.0, 0.0 });
+        var yCount = (int)GetDouble(payload, "y_count", 1.0);
+        var yPitch = GetDouble(payload, "y_pitch", 0.0);
+
+        // circular parameters
+        var axisOrigin = GetDoubleArray(payload, "axis_origin", 3, new[] { 0.0, 0.0, 0.0 });
+        var axisDirection = GetDoubleArray(payload, "axis_direction", 3, new[] { 0.0, 0.0, 1.0 });
+        var circCount = (int)GetDouble(payload, "count", 4.0);
+        var pitchAngle = GetDouble(payload, "pitch_angle", 90.0);
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var features = new List<NXOpen.Features.Feature>();
+            foreach (var fh in featureHandles)
+            {
+                features.Add((NXOpen.Features.Feature)Registry.Resolve(fh, "Feature"));
+            }
+
+            using (var scope = new BuilderScope<NXOpen.Features.PatternFeatureBuilder>(
+                part.Features.CreatePatternFeatureBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.FeatureList.Add(features.ToArray());
+                builder.UseInferredReferencePoint = true;
+
+                if (patternType == "circular")
+                {
+                    if (circCount < 2) throw new ArgumentException("circular pattern count must be at least 2");
+                    if (pitchAngle <= 0 || pitchAngle > 360) throw new ArgumentException("circular pattern pitch_angle must be positive and <= 360");
+
+                    builder.PatternService.PatternType = NXOpen.GeometricUtilities.PatternDefinition.PatternEnum.Circular;
+                    var circDef = builder.PatternService.CircularDefinition;
+                    var pt3d = new Point3d(axisOrigin[0], axisOrigin[1], axisOrigin[2]);
+                    var vec3d = new Vector3d(axisDirection[0], axisDirection[1], axisDirection[2]);
+                    var axis = part.Axes.CreateAxis(pt3d, vec3d, SmartObject.UpdateOption.WithinModeling);
+                    circDef.RotationAxis = axis;
+                    circDef.RotationCenter = part.Points.CreatePoint(pt3d);
+                    circDef.AngularSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Offset;
+                    circDef.AngularSpacing.NCopies.RightHandSide = circCount.ToString(CultureInfo.InvariantCulture);
+                    circDef.AngularSpacing.PitchAngle.RightHandSide = pitchAngle.ToString("G", CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    if (xCount < 2 && yCount < 2) throw new ArgumentException("linear pattern requires count >= 2 in at least one direction");
+                    if (xPitch <= 0 && xCount >= 2) throw new ArgumentException("linear pattern x_pitch must be positive");
+
+                    builder.PatternService.PatternType = NXOpen.GeometricUtilities.PatternDefinition.PatternEnum.Linear;
+                    var rectDef = builder.PatternService.RectangularDefinition;
+                    rectDef.XDirection = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(xDir[0], xDir[1], xDir[2]), SmartObject.UpdateOption.WithinModeling);
+                    rectDef.XSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Offset;
+                    rectDef.XSpacing.NCopies.RightHandSide = xCount.ToString(CultureInfo.InvariantCulture);
+                    rectDef.XSpacing.PitchDistance.RightHandSide = xPitch.ToString("G", CultureInfo.InvariantCulture);
+
+                    if (yCount >= 2 && yPitch > 0)
+                    {
+                        rectDef.UseYDirectionToggle = true;
+                        rectDef.YDirection = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(yDir[0], yDir[1], yDir[2]), SmartObject.UpdateOption.WithinModeling);
+                        rectDef.YSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Offset;
+                        rectDef.YSpacing.NCopies.RightHandSide = yCount.ToString(CultureInfo.InvariantCulture);
+                        rectDef.YSpacing.PitchDistance.RightHandSide = yPitch.ToString("G", CultureInfo.InvariantCulture);
+                    }
+                }
+
+                var feature = scope.CommitOnce(b => (NXOpen.Features.Feature)b.CommitFeature());
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+
+                var bodies = feature.GetBodies();
+                var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
+                object bodyWire = new Dictionary<string, object>();
+                if (body != null)
+                {
+                    var bHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+                    bodyWire = FormatHandle(bHandle, body);
+                }
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["feature_ref"] = FormatHandle(featureHandle, feature),
+                    ["body_ref"] = bodyWire,
+                    ["feature_name"] = feature.GetFeatureName(),
+                    ["feature_type"] = feature.FeatureType,
+                });
+            }
+        }, token));
+    }
+
+    private static Task<byte[]> StartCreatePattern(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var featureHandles = ExtractHandleList(payload, "feature_refs", "Feature");
+        if (featureHandles.Count == 0 && payload.TryGetValue("feature_ref", out var fRaw) && fRaw is Dictionary<string, object> fDict && fDict.Count > 0)
+        {
+            featureHandles.Add(RequireHandle(new Dictionary<string, object> { ["feature"] = fDict }, "feature", "Feature"));
+        }
+        if (featureHandles.Count == 0)
+        {
+            throw new ArgumentException("either feature_refs or feature_ref must be supplied for pattern");
+        }
+
+        var patternType = GetString(payload, "pattern_type", "linear").Trim().ToLowerInvariant();
+        if (patternType != "linear" && patternType != "circular")
+        {
+            throw new ArgumentException("unsupported pattern_type: " + patternType + "; expected 'linear' or 'circular'");
+        }
+
+        var xDir = GetDoubleArray(payload, "x_direction", 3, new[] { 1.0, 0.0, 0.0 });
+        var xCount = (int)GetDouble(payload, "x_count", 2.0);
+        var xPitch = GetDouble(payload, "x_pitch", 10.0);
+        var yDir = GetDoubleArray(payload, "y_direction", 3, new[] { 0.0, 1.0, 0.0 });
+        var yCount = (int)GetDouble(payload, "y_count", 0.0);
+        var yPitch = GetDouble(payload, "y_pitch", 0.0);
+
+        var axisOrigin = GetDoubleArray(payload, "axis_origin", 3, new[] { 0.0, 0.0, 0.0 });
+        var axisDirection = GetDoubleArray(payload, "axis_direction", 3, new[] { 0.0, 0.0, 1.0 });
+        var circCount = (int)GetDouble(payload, "count", 4.0);
+        var pitchAngle = GetDouble(payload, "pitch_angle", 90.0);
+
+        if (patternType == "linear")
+        {
+            if (xCount < 2 && yCount < 2) throw new ArgumentException("linear pattern requires count >= 2 in at least one direction");
+            if (xCount >= 2 && xPitch <= 0) throw new ArgumentException("linear pattern x_pitch must be positive");
+            if (yCount >= 2 && yPitch <= 0) throw new ArgumentException("linear pattern y_pitch must be positive when y_count >= 2");
+            if (Math.Abs(xDir[0]) < 1e-9 && Math.Abs(xDir[1]) < 1e-9 && Math.Abs(xDir[2]) < 1e-9) xDir[0] = 1.0;
+            if (Math.Abs(yDir[0]) < 1e-9 && Math.Abs(yDir[1]) < 1e-9 && Math.Abs(yDir[2]) < 1e-9) yDir[1] = 1.0;
+        }
+        else
+        {
+            if (circCount < 2) throw new ArgumentException("circular pattern count must be at least 2");
+            if (pitchAngle <= 0 || pitchAngle > 360) throw new ArgumentException("circular pattern pitch_angle must be between 0 and 360 degrees");
+            if (Math.Abs(axisDirection[0]) < 1e-9 && Math.Abs(axisDirection[1]) < 1e-9 && Math.Abs(axisDirection[2]) < 1e-9) axisDirection[2] = 1.0;
+        }
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var features = new List<NXOpen.Features.Feature>();
+            foreach (var fh in featureHandles)
+            {
+                features.Add((NXOpen.Features.Feature)Registry.Resolve(fh, "Feature"));
+            }
+
+            using (var scope = new BuilderScope<NXOpen.Features.PatternFeatureBuilder>(
+                part.Features.CreatePatternFeatureBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.FeatureList.Add(features.ToArray());
+                builder.UseInferredReferencePoint = true;
+
+                if (patternType == "circular")
+                {
+                    builder.PatternService.PatternType = NXOpen.GeometricUtilities.PatternDefinition.PatternEnum.Circular;
+                    var circDef = builder.PatternService.CircularDefinition;
+                    var pt3d = new Point3d(axisOrigin[0], axisOrigin[1], axisOrigin[2]);
+                    var vec3d = new Vector3d(axisDirection[0], axisDirection[1], axisDirection[2]);
+                    circDef.RotationAxis = part.Axes.CreateAxis(pt3d, vec3d, SmartObject.UpdateOption.WithinModeling);
+                    circDef.RotationCenter = part.Points.CreatePoint(pt3d);
+                    circDef.AngularSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Pitch;
+                    circDef.AngularSpacing.NCopies.RightHandSide = circCount.ToString(CultureInfo.InvariantCulture);
+                    circDef.AngularSpacing.PitchAngle.RightHandSide = pitchAngle.ToString("G", CultureInfo.InvariantCulture);
+                }
+                else
+                {
+                    builder.PatternService.PatternType = NXOpen.GeometricUtilities.PatternDefinition.PatternEnum.Linear;
+                    var rectDef = builder.PatternService.RectangularDefinition;
+
+                    int primaryCount = xCount;
+                    double primaryPitch = xPitch;
+                    double[] primaryDir = xDir;
+                    int secondaryCount = yCount;
+                    double secondaryPitch = yPitch;
+                    double[] secondaryDir = yDir;
+
+                    if (primaryCount < 2 && secondaryCount >= 2)
+                    {
+                        primaryCount = secondaryCount;
+                        primaryPitch = secondaryPitch;
+                        primaryDir = secondaryDir;
+                        secondaryCount = 0;
+                        secondaryPitch = 0;
+                    }
+
+                    rectDef.XDirection = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(primaryDir[0], primaryDir[1], primaryDir[2]), SmartObject.UpdateOption.WithinModeling);
+                    rectDef.XSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Pitch;
+                    rectDef.XSpacing.NCopies.RightHandSide = primaryCount.ToString(CultureInfo.InvariantCulture);
+                    rectDef.XSpacing.PitchDistance.RightHandSide = primaryPitch.ToString("G", CultureInfo.InvariantCulture);
+
+                    if (secondaryCount >= 2 && secondaryPitch > 0)
+                    {
+                        rectDef.UseYDirectionToggle = true;
+                        rectDef.YDirection = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(secondaryDir[0], secondaryDir[1], secondaryDir[2]), SmartObject.UpdateOption.WithinModeling);
+                        rectDef.YSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Pitch;
+                        rectDef.YSpacing.NCopies.RightHandSide = secondaryCount.ToString(CultureInfo.InvariantCulture);
+                        rectDef.YSpacing.PitchDistance.RightHandSide = secondaryPitch.ToString("G", CultureInfo.InvariantCulture);
+                    }
+                    else
+                    {
+                        rectDef.UseYDirectionToggle = false;
+                    }
+                }
+
+                var feature = scope.CommitOnce(b => (NXOpen.Features.Feature)b.CommitFeature());
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+
+                var bodies = feature.GetBodies();
+                var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
+                object bodyWire = new Dictionary<string, object>();
+                if (body != null)
+                {
+                    var bHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+                    bodyWire = FormatHandle(bHandle, body);
+                }
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["feature_ref"] = FormatHandle(featureHandle, feature),
+                    ["body_ref"] = bodyWire,
+                    ["feature_name"] = feature.GetFeatureName(),
+                    ["feature_type"] = feature.FeatureType,
+                });
+            }
+        }, token));
+    }
+
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
         if (!source.TryGetValue(key, out var value) || value == null) return defaultValue;

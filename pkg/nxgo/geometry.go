@@ -191,6 +191,24 @@ type ChamferParams struct {
 	Option         string  // "symmetric", "two_offsets", "offset_and_angle"
 }
 
+type LinearPatternParams struct {
+	FeatureRefs []protocol.ObjectHandleWire
+	XDirection  Vector3D
+	XCount      int
+	XPitch      float64
+	YDirection  Vector3D
+	YCount      int
+	YPitch      float64
+}
+
+type CircularPatternParams struct {
+	FeatureRefs   []protocol.ObjectHandleWire
+	AxisOrigin    Point3D
+	AxisDirection Vector3D
+	Count         int
+	PitchAngle    float64
+}
+
 type MassProperties struct {
 	Units     string
 	Volume    float64
@@ -209,6 +227,7 @@ type BoundingBox struct {
 
 type Feature struct {
 	session *Session
+	part    *Part
 	Ref     protocol.ObjectHandleWire
 	BodyRef protocol.ObjectHandleWire
 	Name    string
@@ -285,6 +304,7 @@ func (p *Part) CreateBlock(ctx context.Context, params BlockParams) (*Feature, e
 
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -332,6 +352,7 @@ func (p *Part) CreateCylinder(ctx context.Context, params CylinderParams) (*Feat
 
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -394,6 +415,7 @@ func (p *Part) Boolean(ctx context.Context, params BooleanParams) (*Feature, err
 
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -495,6 +517,7 @@ func (p *Part) CreateHole(ctx context.Context, params HoleParams) (*Feature, err
 
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -876,6 +899,7 @@ func (p *Part) Extrude(ctx context.Context, params ExtrudeParams) (*Feature, err
 	}
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -932,6 +956,7 @@ func (p *Part) Revolve(ctx context.Context, params RevolveParams) (*Feature, err
 	}
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -986,6 +1011,7 @@ func (p *Part) CreateFillet(ctx context.Context, params FilletParams) (*Feature,
 	}
 	return &Feature{
 		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -1061,6 +1087,138 @@ func (p *Part) CreateChamfer(ctx context.Context, params ChamferParams) (*Featur
 	}
 	return &Feature{
 		session: p.session,
+		part:    p,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
+	}, nil
+}
+
+func (p *Part) CreateLinearPattern(ctx context.Context, params LinearPatternParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if len(params.FeatureRefs) == 0 {
+		return nil, errors.New("linear pattern requires at least one feature reference")
+	}
+	for i := range params.FeatureRefs {
+		if err := p.session.validateObjectHandle(&params.FeatureRefs[i], "Feature"); err != nil {
+			return nil, err
+		}
+	}
+	if params.XCount < 2 && params.YCount < 2 {
+		return nil, errors.New("linear pattern requires count >= 2 in at least one direction")
+	}
+	if params.XCount >= 2 && params.XPitch <= 0 {
+		return nil, errors.New("linear pattern x_pitch must be greater than zero")
+	}
+	if params.YCount >= 2 && params.YPitch <= 0 {
+		return nil, errors.New("linear pattern y_pitch must be greater than zero")
+	}
+
+	xDir := params.XDirection
+	if xDir[0] == 0 && xDir[1] == 0 && xDir[2] == 0 {
+		xDir = Vector3D{1, 0, 0}
+	}
+	yDir := params.YDirection
+	if yDir[0] == 0 && yDir[1] == 0 && yDir[2] == 0 {
+		yDir = Vector3D{0, 1, 0}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreatePatternRequest{
+		PartRef:     &p.Ref,
+		FeatureRefs: params.FeatureRefs,
+		PatternType: "linear",
+		XDirection:  xDir,
+		XCount:      params.XCount,
+		XPitch:      params.XPitch,
+		YDirection:  yDir,
+		YCount:      params.YCount,
+		YPitch:      params.YPitch,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_pattern"),
+		Op:        "feature.create_pattern",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.FeatureCreatePatternResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Feature{
+		session: p.session,
+		part:    p,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
+	}, nil
+}
+
+func (p *Part) CreateCircularPattern(ctx context.Context, params CircularPatternParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if len(params.FeatureRefs) == 0 {
+		return nil, errors.New("circular pattern requires at least one feature reference")
+	}
+	for i := range params.FeatureRefs {
+		if err := p.session.validateObjectHandle(&params.FeatureRefs[i], "Feature"); err != nil {
+			return nil, err
+		}
+	}
+	if params.Count < 2 {
+		return nil, errors.New("circular pattern count must be at least 2")
+	}
+	if params.PitchAngle <= 0 || params.PitchAngle > 360 {
+		return nil, errors.New("circular pattern pitch_angle must be between 0 and 360 degrees")
+	}
+
+	axisDir := params.AxisDirection
+	if axisDir[0] == 0 && axisDir[1] == 0 && axisDir[2] == 0 {
+		axisDir = Vector3D{0, 0, 1}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreatePatternRequest{
+		PartRef:       &p.Ref,
+		FeatureRefs:   params.FeatureRefs,
+		PatternType:   "circular",
+		AxisOrigin:    params.AxisOrigin,
+		AxisDirection: axisDir,
+		Count:         params.Count,
+		PitchAngle:    params.PitchAngle,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_pattern"),
+		Op:        "feature.create_pattern",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.FeatureCreatePatternResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Feature{
+		session: p.session,
+		part:    p,
 		Ref:     payload.FeatureRef,
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
@@ -1267,6 +1425,32 @@ func (b *Body) CreateChamfer(ctx context.Context, distance float64) (*Feature, e
 		BodyRef:  &b.Ref,
 		Distance: distance,
 	})
+}
+
+func (f *Feature) CreateLinearPattern(ctx context.Context, params LinearPatternParams) (*Feature, error) {
+	if f == nil {
+		return nil, errors.New("feature reference is nil")
+	}
+	if f.part == nil {
+		return nil, errors.New("feature is not attached to an active part")
+	}
+	if len(params.FeatureRefs) == 0 {
+		params.FeatureRefs = []protocol.ObjectHandleWire{f.Ref}
+	}
+	return f.part.CreateLinearPattern(ctx, params)
+}
+
+func (f *Feature) CreateCircularPattern(ctx context.Context, params CircularPatternParams) (*Feature, error) {
+	if f == nil {
+		return nil, errors.New("feature reference is nil")
+	}
+	if f.part == nil {
+		return nil, errors.New("feature is not attached to an active part")
+	}
+	if len(params.FeatureRefs) == 0 {
+		params.FeatureRefs = []protocol.ObjectHandleWire{f.Ref}
+	}
+	return f.part.CreateCircularPattern(ctx, params)
 }
 
 

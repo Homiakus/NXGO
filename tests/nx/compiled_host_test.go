@@ -245,6 +245,17 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if filletFeat.Ref.Generation == 0 {
 		t.Fatal("canonical CreateFillet missing generation")
 	}
+	patFeat, err := committedFeature.CreateLinearPattern(ctx, nxgo.LinearPatternParams{
+		XDirection: nxgo.Vector3D{1, 0, 0},
+		XCount:     2,
+		XPitch:     20.0,
+	})
+	if err != nil {
+		t.Fatalf("canonical CreateLinearPattern inside commit transaction failed: %v", err)
+	}
+	if patFeat.Ref.Generation == 0 {
+		t.Fatal("canonical CreateLinearPattern missing generation")
+	}
 	if err := commitTx.Commit(ctx); err != nil {
 		t.Fatalf("canonical transaction.commit failed: %v", err)
 	}
@@ -252,8 +263,8 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonical summary after commit failed: %v", err)
 	}
-	if summaryAfterCommit.BodyCount != 3 {
-		t.Fatalf("canonical commit did not preserve body count: got %d want 3", summaryAfterCommit.BodyCount)
+	if summaryAfterCommit.BodyCount != 4 {
+		t.Fatalf("canonical commit did not preserve body count: got %d want 4", summaryAfterCommit.BodyCount)
 	}
 
 	saved, err := part.Save(ctx)
@@ -294,8 +305,8 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonical reopened part summary failed: %v", err)
 	}
-	if reopenedSummary.BodyCount != 3 {
-		t.Fatalf("canonical reopened part lost committed geometry: bodies=%d want 3", reopenedSummary.BodyCount)
+	if reopenedSummary.BodyCount != 4 {
+		t.Fatalf("canonical reopened part lost committed geometry: bodies=%d want 4", reopenedSummary.BodyCount)
 	}
 	if err := reopened.Close(ctx, false); err != nil {
 		t.Fatalf("canonical reopened part close failed: %v", err)

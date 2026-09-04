@@ -622,6 +622,36 @@ type FeatureCreateChamferResponse struct {
 	FeatureType string           `json:"feature_type"`
 }
 
+type FeatureCreatePatternRequest struct {
+	PartRef       *ObjectHandleWire  `json:"part_ref,omitempty"`
+	FeatureRefs   []ObjectHandleWire `json:"feature_refs,omitempty"`
+	FeatureRef    *ObjectHandleWire  `json:"feature_ref,omitempty"`
+	PatternType   string             `json:"pattern_type"`
+
+	// Linear / Rectangular parameters
+	XDirection    [3]float64         `json:"x_direction,omitempty"`
+	XCount        int                `json:"x_count,omitempty"`
+	XPitch        float64            `json:"x_pitch,omitempty"`
+	YDirection    [3]float64         `json:"y_direction,omitempty"`
+	YCount        int                `json:"y_count,omitempty"`
+	YPitch        float64            `json:"y_pitch,omitempty"`
+
+	// Circular / Polar parameters
+	AxisOrigin    [3]float64         `json:"axis_origin,omitempty"`
+	AxisDirection [3]float64         `json:"axis_direction,omitempty"`
+	Count         int                `json:"count,omitempty"`
+	PitchAngle    float64            `json:"pitch_angle,omitempty"`
+	SpanAngle     float64            `json:"span_angle,omitempty"`
+}
+
+type FeatureCreatePatternResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref,omitempty"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
+
+
 type GeometryQueryMassPropertiesRequest struct {
 	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`
 	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
