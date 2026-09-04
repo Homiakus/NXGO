@@ -238,6 +238,238 @@ public static partial class EntryPoint
         }, token));
     }
 
+    private static Task<byte[]> StartQueryBulkGeometry(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var hasPartRef = payload.ContainsKey("part_ref") && payload["part_ref"] != null;
+        var hasBodyRefs = payload.ContainsKey("body_refs") && payload["body_refs"] != null;
+        if (!hasPartRef && !hasBodyRefs)
+            throw new ArgumentException("geometry.query_bulk_analysis requires part_ref or body_refs");
+
+        var includeMass = GetBool(payload, "include_mass_properties", true);
+        var includeBox = GetBool(payload, "include_bounding_box", true);
+        var includeFacesEdges = GetBool(payload, "include_faces_and_edges", true);
+        var produceHandles = GetBool(payload, "produce_body_handles", false);
+
+        ObjectHandleToken? partHandle = null;
+        if (hasPartRef)
+        {
+            partHandle = RequireHandle(payload, "part_ref", "Part");
+        }
+
+        return MapRead(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+
+            var bodies = new List<Body>();
+            string partUnits = "mm";
+
+            if (partHandle != null)
+            {
+                var part = (Part)Registry.Resolve(partHandle, "Part");
+                partUnits = part.PartUnits == (BasePart.Units)Part.Units.Inches ? "inch" : "mm";
+                foreach (Body b in part.Bodies) bodies.Add(b);
+            }
+            else
+            {
+                var rawBodyRefs = GetArray(payload, "body_refs");
+                foreach (var rawRef in rawBodyRefs)
+                {
+                    var dict = rawRef as Dictionary<string, object>;
+                    if (dict == null) throw new ArgumentException("each body_ref must be an object");
+                    var handle = ParseHandle(dict);
+                    var b = (Body)Registry.Resolve(handle, "Body");
+                    bodies.Add(b);
+                }
+                if (bodies.Count > 0 && bodies[0].OwningPart != null)
+                {
+                    partUnits = bodies[0].OwningPart.PartUnits == (BasePart.Units)Part.Units.Inches ? "inch" : "mm";
+                }
+            }
+
+            if (produceHandles)
+            {
+                if (bodies.Count > MaxProducedHandlesPerRequest)
+                {
+                    throw new HandleScopeCapacityException(requestId, MaxProducedHandlesPerRequest);
+                }
+                if (Registry.Count + bodies.Count > Registry.Capacity)
+                {
+                    throw new HandleRegistryCapacityException(Registry.Capacity);
+                }
+            }
+
+            var uf = NXOpen.UF.UFSession.GetUFSession();
+            var totalVolume = 0.0;
+            var totalArea = 0.0;
+            var totalMass = 0.0;
+            var massWeighted = new double[3];
+            var volumeWeighted = new double[3];
+            var minCorner = new double[] { double.PositiveInfinity, double.PositiveInfinity, double.PositiveInfinity };
+            var maxCorner = new double[] { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity };
+            var solidCount = 0;
+            var sheetCount = 0;
+            var bodiesList = new List<object>();
+
+            foreach (var body in bodies)
+            {
+                if (body.IsSolidBody) solidCount++; else sheetCount++;
+                var contract = ContractFor(body);
+
+                var faceCount = 0;
+                var edgeCount = 0;
+                if (includeFacesEdges)
+                {
+                    foreach (Face _ in body.GetFaces()) faceCount++;
+                    foreach (Edge _ in body.GetEdges()) edgeCount++;
+                }
+
+                Dictionary<string, object>? massWire = null;
+                if (includeMass)
+                {
+                    var bodyTags = new NXOpen.Tag[] { body.Tag };
+                    var accuracyValues = new double[11];
+                    var massProps = new double[47];
+                    var statistics = new double[13];
+                    uf.Modl.AskMassProps3d(
+                        bodyTags,
+                        1,
+                        1,
+                        (int)contract.UfMassUnits,
+                        1.0,
+                        1,
+                        accuracyValues,
+                        massProps,
+                        statistics);
+
+                    var normalized = contract.NormalizeMassProperties(massProps);
+                    massWire = new Dictionary<string, object>
+                    {
+                        ["units"] = contract.PartLengthUnit == NxgoLengthUnit.Inch ? "inch" : "mm",
+                        ["volume"] = normalized.Volume,
+                        ["area"] = normalized.Area,
+                        ["mass"] = normalized.Mass,
+                        ["centroid"] = normalized.Centroid,
+                        ["solid_type"] = body.IsSolidBody ? "solid" : "sheet",
+                    };
+
+                    totalVolume += normalized.Volume;
+                    totalArea += normalized.Area;
+                    totalMass += normalized.Mass;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        massWeighted[i] += normalized.Centroid[i] * normalized.Mass;
+                        volumeWeighted[i] += normalized.Centroid[i] * normalized.Volume;
+                    }
+                }
+
+                Dictionary<string, object>? boxWire = null;
+                if (includeBox)
+                {
+                    var minMax = new double[6];
+                    uf.Modl.AskBoundingBox(body.Tag, minMax);
+                    var normalized = contract.NormalizeBoundingBox(minMax);
+                    boxWire = new Dictionary<string, object>
+                    {
+                        ["units"] = contract.PartLengthUnit == NxgoLengthUnit.Inch ? "inch" : "mm",
+                        ["min_corner"] = normalized.MinCorner,
+                        ["max_corner"] = normalized.MaxCorner,
+                        ["dimensions"] = normalized.Dimensions,
+                    };
+
+                    for (int i = 0; i < 3; i++)
+                    {
+                        if (normalized.MinCorner[i] < minCorner[i]) minCorner[i] = normalized.MinCorner[i];
+                        if (normalized.MaxCorner[i] > maxCorner[i]) maxCorner[i] = normalized.MaxCorner[i];
+                    }
+                }
+
+                object? bodyRefWire = null;
+                if (produceHandles)
+                {
+                    var handle = Registry.Register(
+                        body,
+                        "Body",
+                        leaseScopeId: requestId,
+                        ownerObjectId: partHandle != null ? partHandle.ObjectId : "",
+                        leaseScopeLimit: MaxProducedHandlesPerRequest);
+                    bodyRefWire = FormatHandle(handle, body);
+                }
+
+                uint nativeTag = 0;
+                try { nativeTag = (uint)body.Tag; } catch { }
+
+                var bodyEntry = new Dictionary<string, object>
+                {
+                    ["name"] = body.Name ?? "",
+                    ["solid_type"] = body.IsSolidBody ? "solid" : "sheet",
+                    ["face_count"] = faceCount,
+                    ["edge_count"] = edgeCount,
+                    ["native_tag"] = nativeTag,
+                };
+                if (bodyRefWire != null) bodyEntry["body_ref"] = bodyRefWire;
+                if (massWire != null) bodyEntry["mass_properties"] = massWire;
+                if (boxWire != null) bodyEntry["bounding_box"] = boxWire;
+                bodiesList.Add(bodyEntry);
+            }
+
+            var resp = new Dictionary<string, object>
+            {
+                ["units"] = partUnits,
+                ["body_count"] = bodies.Count,
+                ["solid_count"] = solidCount,
+                ["sheet_count"] = sheetCount,
+                ["bodies"] = bodiesList,
+            };
+
+            if (includeMass)
+            {
+                var aggCentroid = new double[3];
+                if (Math.Abs(totalMass) > 1e-15)
+                {
+                    for (int i = 0; i < 3; i++) aggCentroid[i] = massWeighted[i] / totalMass;
+                }
+                else if (Math.Abs(totalVolume) > 1e-15)
+                {
+                    for (int i = 0; i < 3; i++) aggCentroid[i] = volumeWeighted[i] / totalVolume;
+                }
+
+                resp["aggregate_mass"] = new Dictionary<string, object>
+                {
+                    ["units"] = partUnits,
+                    ["volume"] = totalVolume,
+                    ["area"] = totalArea,
+                    ["mass"] = totalMass,
+                    ["centroid"] = aggCentroid,
+                    ["solid_type"] = bodies.Count > 0 ? "aggregate" : "empty",
+                };
+            }
+
+            if (includeBox)
+            {
+                var aggDims = new double[3];
+                if (!double.IsInfinity(minCorner[0]))
+                {
+                    for (int i = 0; i < 3; i++) aggDims[i] = maxCorner[i] - minCorner[i];
+                }
+                else
+                {
+                    minCorner = new double[] { 0, 0, 0 };
+                    maxCorner = new double[] { 0, 0, 0 };
+                }
+
+                resp["aggregate_box"] = new Dictionary<string, object>
+                {
+                    ["units"] = partUnits,
+                    ["min_corner"] = minCorner,
+                    ["max_corner"] = maxCorner,
+                    ["dimensions"] = aggDims,
+                };
+            }
+
+            return FormatResponse(requestId, resp);
+        }, token));
+    }
+
     private static Task<byte[]> StartObjectRelease(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {
         var leaseScopeId = GetString(payload, "lease_scope_id", "").Trim();
@@ -1313,115 +1545,6 @@ public static partial class EntryPoint
         }, token));
     }
 
-    private static Task<byte[]> StartCreatePattern(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
-    {
-        var partHandle = RequireHandle(payload, "part_ref", "Part");
-        var patternType = GetString(payload, "pattern_type", "linear").Trim().ToLowerInvariant();
-
-        var featureHandles = ExtractHandleList(payload, "feature_refs", "Feature");
-        if (featureHandles.Count == 0 && payload.TryGetValue("feature_ref", out var fRaw) && fRaw is Dictionary<string, object> fDict && fDict.Count > 0)
-        {
-            featureHandles.Add(RequireHandle(new Dictionary<string, object> { ["feature"] = fDict }, "feature", "Feature"));
-        }
-        if (featureHandles.Count == 0)
-        {
-            throw new ArgumentException("either feature_refs or feature_ref must be supplied for pattern");
-        }
-
-        // linear parameters
-        var xDir = GetDoubleArray(payload, "x_direction", 3, new[] { 1.0, 0.0, 0.0 });
-        var xCount = (int)GetDouble(payload, "x_count", 2.0);
-        var xPitch = GetDouble(payload, "x_pitch", 10.0);
-        var yDir = GetDoubleArray(payload, "y_direction", 3, new[] { 0.0, 1.0, 0.0 });
-        var yCount = (int)GetDouble(payload, "y_count", 1.0);
-        var yPitch = GetDouble(payload, "y_pitch", 0.0);
-
-        // circular parameters
-        var axisOrigin = GetDoubleArray(payload, "axis_origin", 3, new[] { 0.0, 0.0, 0.0 });
-        var axisDirection = GetDoubleArray(payload, "axis_direction", 3, new[] { 0.0, 0.0, 1.0 });
-        var circCount = (int)GetDouble(payload, "count", 4.0);
-        var pitchAngle = GetDouble(payload, "pitch_angle", 90.0);
-
-        return MapMutation(requestId, executor.EnqueueTracked(() =>
-        {
-            Health.RequireReusable();
-            var part = (Part)Registry.Resolve(partHandle, "Part");
-            Journal.MarkStarted(requestId);
-
-            var features = new List<NXOpen.Features.Feature>();
-            foreach (var fh in featureHandles)
-            {
-                features.Add((NXOpen.Features.Feature)Registry.Resolve(fh, "Feature"));
-            }
-
-            using (var scope = new BuilderScope<NXOpen.Features.PatternFeatureBuilder>(
-                part.Features.CreatePatternFeatureBuilder(null!),
-                b => { try { b.Destroy(); } catch { } }))
-            {
-                var builder = scope.Builder;
-                builder.FeatureList.Add(features.ToArray());
-                builder.UseInferredReferencePoint = true;
-
-                if (patternType == "circular")
-                {
-                    if (circCount < 2) throw new ArgumentException("circular pattern count must be at least 2");
-                    if (pitchAngle <= 0 || pitchAngle > 360) throw new ArgumentException("circular pattern pitch_angle must be positive and <= 360");
-
-                    builder.PatternService.PatternType = NXOpen.GeometricUtilities.PatternDefinition.PatternEnum.Circular;
-                    var circDef = builder.PatternService.CircularDefinition;
-                    var pt3d = new Point3d(axisOrigin[0], axisOrigin[1], axisOrigin[2]);
-                    var vec3d = new Vector3d(axisDirection[0], axisDirection[1], axisDirection[2]);
-                    var axis = part.Axes.CreateAxis(pt3d, vec3d, SmartObject.UpdateOption.WithinModeling);
-                    circDef.RotationAxis = axis;
-                    circDef.RotationCenter = part.Points.CreatePoint(pt3d);
-                    circDef.AngularSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Offset;
-                    circDef.AngularSpacing.NCopies.RightHandSide = circCount.ToString(CultureInfo.InvariantCulture);
-                    circDef.AngularSpacing.PitchAngle.RightHandSide = pitchAngle.ToString("G", CultureInfo.InvariantCulture);
-                }
-                else
-                {
-                    if (xCount < 2 && yCount < 2) throw new ArgumentException("linear pattern requires count >= 2 in at least one direction");
-                    if (xPitch <= 0 && xCount >= 2) throw new ArgumentException("linear pattern x_pitch must be positive");
-
-                    builder.PatternService.PatternType = NXOpen.GeometricUtilities.PatternDefinition.PatternEnum.Linear;
-                    var rectDef = builder.PatternService.RectangularDefinition;
-                    rectDef.XDirection = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(xDir[0], xDir[1], xDir[2]), SmartObject.UpdateOption.WithinModeling);
-                    rectDef.XSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Offset;
-                    rectDef.XSpacing.NCopies.RightHandSide = xCount.ToString(CultureInfo.InvariantCulture);
-                    rectDef.XSpacing.PitchDistance.RightHandSide = xPitch.ToString("G", CultureInfo.InvariantCulture);
-
-                    if (yCount >= 2 && yPitch > 0)
-                    {
-                        rectDef.UseYDirectionToggle = true;
-                        rectDef.YDirection = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(yDir[0], yDir[1], yDir[2]), SmartObject.UpdateOption.WithinModeling);
-                        rectDef.YSpacing.SpaceType = NXOpen.GeometricUtilities.PatternSpacing.SpacingType.Offset;
-                        rectDef.YSpacing.NCopies.RightHandSide = yCount.ToString(CultureInfo.InvariantCulture);
-                        rectDef.YSpacing.PitchDistance.RightHandSide = yPitch.ToString("G", CultureInfo.InvariantCulture);
-                    }
-                }
-
-                var feature = scope.CommitOnce(b => (NXOpen.Features.Feature)b.CommitFeature());
-                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
-
-                var bodies = feature.GetBodies();
-                var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
-                object bodyWire = new Dictionary<string, object>();
-                if (body != null)
-                {
-                    var bHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
-                    bodyWire = FormatHandle(bHandle, body);
-                }
-
-                return FormatResponse(requestId, new Dictionary<string, object>
-                {
-                    ["feature_ref"] = FormatHandle(featureHandle, feature),
-                    ["body_ref"] = bodyWire,
-                    ["feature_name"] = feature.GetFeatureName(),
-                    ["feature_type"] = feature.FeatureType,
-                });
-            }
-        }, token));
-    }
 
     private static Task<byte[]> StartCreatePattern(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
     {

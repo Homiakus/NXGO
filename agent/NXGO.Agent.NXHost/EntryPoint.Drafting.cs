@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NXGO.Agent.Core;
 using NXOpen;
+using NXOpen.Annotations;
 using NXOpen.Drawings;
 
 namespace NXGO.Agent.NXHost;
@@ -260,5 +261,136 @@ public static partial class EntryPoint
             }
         }
         return result;
+    }
+
+    private static Task<byte[]> StartDraftingCreateStandardViews(
+        NxExecutor executor,
+        string requestId,
+        Dictionary<string, object> payload,
+        CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var layoutText = GetString(payload, "layout", "front_top_right_iso").Trim().ToLowerInvariant();
+        var margin = GetDouble(payload, "margin_between_views", 15.0);
+        var borderMargin = GetDouble(payload, "margin_to_border", 20.0);
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            StandardViewsBuilder.Type layoutType;
+            switch (layoutText)
+            {
+                case "front_top":
+                    layoutType = StandardViewsBuilder.Type.FrontTop;
+                    break;
+                case "front_right":
+                    layoutType = StandardViewsBuilder.Type.FrontRight;
+                    break;
+                case "front_top_right":
+                    layoutType = StandardViewsBuilder.Type.FrontTopRight;
+                    break;
+                case "front_top_right_iso":
+                default:
+                    layoutType = StandardViewsBuilder.Type.FrontTopRightIso;
+                    break;
+            }
+
+            int viewCount = 0;
+            using (var scope = new BuilderScope<StandardViewsBuilder>(
+                part.DraftingViews.CreateStandardViewsBuilder(),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.LayoutType = layoutType;
+                builder.Autoscale = true;
+                builder.MarginBetweenViews = margin;
+                builder.MarginToBorder = borderMargin;
+                scope.CommitOnce(b => b.Commit());
+            }
+
+            var viewNames = new List<string>();
+            foreach (DraftingView v in part.DraftingViews)
+            {
+                viewCount++;
+                viewNames.Add(v.Name ?? string.Empty);
+            }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["created"] = true,
+                ["layout"] = layoutText,
+                ["view_count"] = viewCount,
+                ["views"] = viewNames,
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartDraftingAddNote(
+        NxExecutor executor,
+        string requestId,
+        Dictionary<string, object> payload,
+        CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var textLines = GetStringArray(payload, "text_lines");
+        var originX = GetDouble(payload, "origin_x", 50.0);
+        var originY = GetDouble(payload, "origin_y", 50.0);
+        var anchorText = GetString(payload, "anchor", "bottom_left").Trim().ToLowerInvariant();
+        var textSize = GetDouble(payload, "text_size", 3.5);
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            using (var scope = new BuilderScope<DraftingNoteBuilder>(
+                part.Annotations.CreateDraftingNoteBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.Text.SetEditorText(textLines);
+                builder.Origin.Origin.SetValue(null!, null!, new Point3d(originX, originY, 0.0));
+
+                OriginBuilder.AlignmentPosition anchor = OriginBuilder.AlignmentPosition.BottomLeft;
+                switch (anchorText)
+                {
+                    case "bottom_right": anchor = OriginBuilder.AlignmentPosition.BottomRight; break;
+                    case "top_left": anchor = OriginBuilder.AlignmentPosition.TopLeft; break;
+                    case "top_right": anchor = OriginBuilder.AlignmentPosition.TopRight; break;
+                    case "mid_center": anchor = OriginBuilder.AlignmentPosition.MidCenter; break;
+                    default: anchor = OriginBuilder.AlignmentPosition.BottomLeft; break;
+                }
+                try { builder.Origin.Anchor = anchor; } catch { }
+
+                if (textSize > 0.0)
+                {
+                    try { builder.Style.LetteringStyle.GeneralTextSize = textSize; } catch { }
+                }
+
+                scope.CommitOnce(b => b.Commit());
+            }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["added"] = true,
+                ["line_count"] = textLines.Length,
+                ["origin_x"] = originX,
+                ["origin_y"] = originY,
+            });
+        }, token));
+    }
+
+    private static string[] GetStringArray(Dictionary<string, object> source, string key)
+    {
+        var list = new List<string>();
+        foreach (var item in GetArray(source, key))
+        {
+            list.Add(Convert.ToString(item, CultureInfo.InvariantCulture) ?? string.Empty);
+        }
+        return list.ToArray();
     }
 }

@@ -43,3 +43,35 @@ func TestSyslogCollector(t *testing.T) {
 		t.Fatalf("expected exported content %q, got %q", content, string(destData))
 	}
 }
+
+func TestSyslogCorrelation(t *testing.T) {
+	logData := []byte(`
+2026-09-04 12:00:01 [nxgo:session:sess-1] >>> INFO session initialized
+2026-09-04 12:00:02 [nxgo:req:req-extrude-1] >>> INFO starting extrude builder
+2026-09-04 12:00:03 [nxgo:req:req-extrude-1] [nxgo:tx:tx-99] >>> INFO commit transaction
+2026-09-04 12:00:04 [nxgo:req:req-fail-2] >>> ERROR failed to create fillet
+`)
+
+	entries := supervisor.ExtractCorrelations(logData)
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 correlated entries, got %d", len(entries))
+	}
+
+	req1Entries := supervisor.FilterByRequestID(entries, "req-extrude-1")
+	if len(req1Entries) != 2 {
+		t.Fatalf("expected 2 entries for req-extrude-1, got %d", len(req1Entries))
+	}
+
+	txEntries := supervisor.FilterByTxID(entries, "tx-99")
+	if len(txEntries) != 1 {
+		t.Fatalf("expected 1 entry for tx-99, got %d", len(txEntries))
+	}
+	if txEntries[0].RequestID != "req-extrude-1" {
+		t.Fatalf("expected request_id req-extrude-1 on tx entry, got %s", txEntries[0].RequestID)
+	}
+
+	failEntries := supervisor.FilterByRequestID(entries, "req-fail-2")
+	if len(failEntries) != 1 || failEntries[0].Level != "ERROR" {
+		t.Fatalf("expected 1 ERROR entry for req-fail-2, got %+v", failEntries)
+	}
+}

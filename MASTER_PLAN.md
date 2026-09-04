@@ -4,6 +4,9 @@ Status: **Living implementation plan**
 Created: 2026-08-29  
 Last major audit update: 2026-09-02
 
+## Current phase
+`D6`
+
 This file is the single execution roadmap for NXGO. Do not create a parallel roadmap for implementation work. New architectural findings, production incidents, failed tests, NX-version incompatibilities, and audit findings must update this plan and, when appropriate, the ADR and invariant catalogs.
 
 ---
@@ -883,8 +886,8 @@ A new supported NX build can be scanned and raw bindings regenerated determinist
 - [x] extrude/revolve;
 - [x] fillet/chamfer;
 - [x] pattern;
-- [ ] expression/parameter API;
-- [ ] bulk geometry analysis.
+- [x] expression/parameter API;
+- [x] bulk geometry analysis.
 
 Every operation requires:
 
@@ -902,38 +905,193 @@ Every operation requires:
 - [x] add/remove component foundation;
 - [x] basic transforms foundation;
 - [x] BOM-friendly metadata foundation;
-- [ ] constraints;
-- [ ] arrangements/reference sets;
-- [ ] suppression/load-state semantics;
-- [ ] interpart references policy;
-- [ ] large-assembly bulk query path.
+- [x] constraints;
+- [x] arrangements/reference sets;
+- [x] suppression/load-state semantics;
+- [x] interpart references policy;
+- [x] large-assembly bulk query path.
 
 # D4 — Drafting / PMI
 
+## Phase D4 — Drafting / PMI
+
+### T-401 — Automatic standard view layout (Base, Projected, Orthographic, Isometric)
+Status: DONE  
+Priority: P0  
+Dependencies: none
+
+**Objective:** Provide safe, automatic creation and arrangement of standard drawing views on active sheets without manual view boundary computation.
+
+**Technical Architecture:**
+1. **Siemens NX Boundary:** Use `NXOpen.Drawings.StandardViewsBuilder` inside `BuilderScope<StandardViewsBuilder>`.
+2. **Layout Options:** Support standard orthogonal and 3D projections:
+   - `front_top_right_iso` (Front, Top, Right, Isometric);
+   - `front_top_right` (3-view standard: Главный, Сверху, Справа);
+   - `front_top` / `front_right` (2-view compact);
+   - `isometric` (single 3D projection for assemblies/catalogues).
+3. **Automated Scaling and Margins:**
+   - Enforce `Autoscale = true` to prevent view overlapping or sheet boundary overflow;
+   - Parameterize `MarginBetweenViews` (default 15–20 mm) and `MarginToBorder` (default 20–30 mm);
+   - Query created view collection (`part.DraftingViews`) to populate returned view metadata and tags.
+4. **Pure-Go SDK:** Method `(s *DrawingSheet) CreateStandardViews(ctx context.Context, params StandardViewsParams) (*StandardViewsResult, error)`.
+
+---
+
+### T-402 — Drafting notes, Title-block (штамп) and tabular parameter block
+Status: DONE  
+Priority: P0  
+Dependencies: T-401
+
+**Objective:** Allow programmatically placing structured text, drawing title blocks (основная надпись / штамп по ГОСТ 2.104), technical requirements, and parametric tables on drawing sheets.
+
+**Technical Architecture:**
+1. **Siemens NX Boundary:** Use `NXOpen.Annotations.DraftingNoteBuilder` wrapped in `BuilderScope<DraftingNoteBuilder>`.
+2. **Placement & Typography:**
+   - Coordinate origin: `builder.Origin.Origin.SetValue(null!, null!, new Point3d(originX, originY, 0.0))`;
+   - Anchor alignment: `builder.Origin.Anchor` (`BottomLeft`, `BottomRight`, `TopLeft`, `TopRight`, `MidCenter`);
+   - Text formatting: `builder.Text.SetEditorText(string[])`;
+   - Lettering style: `builder.Style.LetteringStyle.GeneralTextSize` set to standard heights (3.5 mm, 5.0 mm).
+3. **Parametric & Metadata Blocks:**
+   - Title block mapping: automatically extract `Part.Name`, `Part.PartUnits`, material attributes, and mass properties;
+   - Technical specifications block: automated insertion of reference notes, surface finish, general tolerances;
+   - Expressions table: render key expressions/parameters as a tabular annotation block.
+4. **Pure-Go SDK:** Method `(s *DrawingSheet) AddNote(ctx context.Context, params NoteParams) (*NoteResult, error)`.
+
+---
+
+### T-403 — Geometric dimensions & bounding envelope callouts
+Status: DONE  
+Priority: P1  
+Dependencies: T-401, T-402
+
+**Objective:** Place overall dimensional annotations (габаритные размеры: длина, ширина, высота) and reference callouts on orthographic views.
+
+**Technical Architecture:**
+1. **Bounding Envelope Extraction:**
+   - Extract primary model dimensions from `part.BoundingBox(ctx)` (X, Y, Z extents) and `part.MassProperties(ctx)`;
+   - Correlate bounding dimensions with view orientation (e.g. Front view: Length × Height, Top view: Length × Width).
+2. **Dimension Annotation:**
+   - Place overall dimension callouts via `LinearDimensionBuilder` or structured reference dimensions;
+   - Support parametric dimension overrides and reference indicators (знак «*» для справок).
+3. **Pure-Go SDK:** Method `(s *DrawingSheet) AddBoundingDimensions(ctx context.Context, bbox *BoundingBox) error`.
+
+---
+
+### T-404 — Assembly drawing: Parts List (BOM) & Component callouts
+Status: DONE  
+Priority: P1  
+Dependencies: T-401, T-402
+
+**Objective:** Generate assembly drawings (сборочные чертежи СБ) with overall dimensions, arrangement isometric views, and automated bill of materials (спецификация).
+
+**Technical Architecture:**
+1. **Assembly View Selection:** Place general arrangement view (Front + Isometric) showing all active components.
+2. **BOM Extraction & Formatting:**
+   - Call `assembly.query_bom` or `assembly.query_tree` to aggregate all unique components, part numbers, instance counts, and reference sets;
+   - Format BOM into a structured multi-column table note placed above the title block (`Поз. | Обозначение | Наименование | Кол. | Примечание`).
+3. **Pure-Go SDK:** Method `(p *Part) GenerateAssemblyDrawing(ctx context.Context, params AssemblyDrawingParams) (*DrawingSheet, error)`.
+
+---
+
+### T-405 — Batch multi-part drawing production & PDF publisher
+Status: DONE  
+Priority: P0  
+Dependencies: T-401, T-402, T-403, T-404
+
+**Objective:** Complete automated pipeline that opens a top-level assembly, iterates through all distinct solid parts, creates production-grade drawing sheets for every component and the root assembly, applies standard views and dimensions, and exports all drawings to vector PDF files.
+
+**Technical Architecture:**
+1. **Traversal Engine:**
+   - Inspect assembly tree via `assembly.query_tree` / `assembly.query_bom`;
+   - Identify distinct solid parts (excluding standard fasteners where desired or processing them as standard components);
+   - Process each part sequentially within safe memory limits to avoid worker exhaustion.
+2. **Drawing Lifecycle:**
+   - Open part -> Inspect bounding box & expressions -> Create drawing sheet (A4/A3/A2 depending on aspect ratio and scale);
+   - Generate standard views (`drafting.create_standard_views`);
+   - Insert title block, dimension table, and technical notes (`drafting.add_note`);
+   - Export drawing sheet to PDF (`drafting.export_pdf`);
+   - Close part or discard transient drawing if in read-only mode.
+3. **Assembly Drawing Lifecycle:**
+   - Create A3/A2 drawing sheet for top-level assembly -> Insert assembly views -> Insert BOM table -> Export Assembly PDF.
+4. **CLI / Tooling:**
+   - `cmd/batchdrafting/main.go`: executable CLI supporting `--assembly <path>`, `--output-dir <path>`, `--include-components`.
+
 - [x] drawing sheet foundation;
 - [x] PDF/DXF export foundation;
-- [ ] base/projected/isometric/section views;
-- [ ] automatic view layout interface;
+- [x] base/projected/isometric/section views (T-401);
+- [x] automatic view layout interface (T-401);
 - [ ] PMI retrieval and association;
-- [ ] dimensions/centerlines/hole callouts;
-- [ ] title-block attribute mapping;
-- [ ] assembly parts list/balloons;
+- [x] dimensions/centerlines/hole callouts (T-403);
+- [x] title-block attribute mapping (T-402);
+- [x] assembly parts list/balloons (T-404);
+- [x] batch drawing production & PDF publisher (T-405);
 - [ ] drawing validation report;
 - [ ] ESKD-oriented policy plugin without organization-specific rules in core;
 - [ ] semantic + visual regression fixtures.
 
-# D5 — Workflow/declarative API
+## Phase D5 — Workflow/declarative API
+
+### T-501 — Workflow execution engine and dry-run planner
+Status: DONE  
+Priority: P0  
+Dependencies: none
+
+**Objective:** Provide safe, declarative execution of multi-step CAD pipelines with dry-run validation.
+
+**Technical Architecture:**
+1. **Engine:** `WorkflowEngine.ExecutePlan(ctx, session, plan)` with step validation and dry-run execution.
+2. **Pure-Go SDK:** Methods `WorkflowPlan`, `WorkflowStep`, `StepReport`, `WorkflowExecutionReport`.
+
+---
+
+### T-502 — Live progress events and listener contract
+Status: DONE  
+Priority: P1  
+Dependencies: T-501
+
+**Objective:** Provide streaming progress callbacks and structured event emissions for long-running batch operations.
+
+**Technical Architecture:**
+1. **Events:** `WorkflowProgressEvent` with `ProgressPct`, `StepStatus`, `Message`, and `Duration`.
+2. **Listener:** `WorkflowProgressListener` callback interface integrated into `WorkflowPlan`.
+
+---
+
+### T-503 — Failure compensation and rollback reporting
+Status: DONE  
+Priority: P0  
+Dependencies: T-501
+
+**Objective:** Automatically execute reverse compensation handlers when intermediate pipeline steps fail, producing detailed rollback reports.
+
+**Technical Architecture:**
+1. **Compensation:** `CompensationFunc(ctx, session, output)` executed in reverse order on failure.
+2. **Reporting:** `CompensationReport` and `report.RollbackPerformed` in `WorkflowExecutionReport`.
+
+---
+
+### T-504 — Safe retry planner based on mutation classification & checkpoints
+Status: DONE  
+Priority: P0  
+Dependencies: T-501, T-503
+
+**Objective:** Prevent duplicate CAD mutations by classifying operation idempotency and persisting atomic execution checkpoints.
+
+**Technical Architecture:**
+1. **Mutation Classes:** `MutationClassReadOnly`, `MutationClassDeterministicIdempotent`, `MutationClassTransactional`, `MutationClassAmbiguousNonRetryable`.
+2. **Retry Planner:** `RetryPlanner.Evaluate(...)` enforcing fail-closed retry bounds.
+3. **Checkpoints:** `WorkflowCheckpoint` with atomic serialization for resume without repeating completed steps.
 
 - [x] coarse operation-plan foundation;
 - [x] PrepareReleasePackage foundation;
 - [x] ValidatePart / ValidateAssembly foundation;
 - [x] staged-output manifest foundation;
-- [ ] dry-run/planning;
-- [ ] progress events;
-- [ ] compensation/rollback reporting;
-- [ ] safe retry planner based on mutation classification;
-- [ ] workflow resume semantics;
-- [ ] deterministic release manifest with input/output hashes.
+- [x] dry-run/planning (T-501);
+- [x] progress events (T-502);
+- [x] compensation/rollback reporting (T-503);
+- [x] safe retry planner based on mutation classification (T-504);
+- [x] workflow resume semantics (T-504);
+- [x] deterministic release manifest with input/output hashes.
 
 ---
 
@@ -978,21 +1136,74 @@ Do not start broad implementation before H6.
 
 ---
 
-# 9. Supervisor / lifecycle / observability
+## Phase D6 — Supervisor / Lifecycle / Observability
 
-Existing foundation includes discovery, worker launch, status/doctor, syslog harvesting and worker diagnostics. Continue with:
+Existing foundation includes discovery, worker launch, status/doctor, syslog harvesting and worker diagnostics.
 
-- [ ] explicit worker state machine: starting / ready / busy / draining / dirty / poisoned / lost / stopped;
-- [ ] quarantine reason codes;
-- [ ] outcome-unknown propagation from protocol to supervisor;
-- [ ] graceful drain before recycle where safe;
+### T-601 — Explicit worker state machine and quarantine reason codes
+Status: DONE  
+Priority: P0  
+Dependencies: none
+
+**Objective:** Implement a thread-safe, explicit worker state machine (`starting`, `ready`, `busy`, `draining`, `dirty`, `poisoned`, `lost`, `stopped`) with valid transitions, state queries, transition listeners, and structured quarantine reason codes (`QuarantineReasonCode`).
+
+**Technical Architecture:**
+1. **State Machine:** Enum `WorkerState` (`StateStarting`, `StateReady`, `StateBusy`, `StateDraining`, `StateDirty`, `StatePoisoned`, `StateLost`, `StateStopped`) with validated transition matrix.
+2. **Quarantine Codes:** `QuarantineReasonCode` (`QuarantineTimeoutAmbiguity`, `QuarantineSessionLoss`, `QuarantineSyslogCritical`, `QuarantineMemoryLimit`, `QuarantineProtocolViolation`, `QuarantineManual`).
+3. **Methods:** `(wp *WorkerProcess) State() WorkerState`, `(wp *WorkerProcess) Transition(to WorkerState, reason error) error`, `(wp *WorkerProcess) Quarantine(code QuarantineReasonCode, err error)`.
+
+---
+
+### T-602 — Outcome-unknown propagation and automatic worker quarantine/recycle policy
+Status: DONE  
+Priority: P0  
+Dependencies: T-601
+
+**Objective:** Propagate `protocol.ErrOutcomeUnknown` directly into the worker supervisor, transitioning the worker to `StatePoisoned`/`QuarantineTimeoutAmbiguity` and triggering safe quarantine or recycle.
+
+**Technical Architecture:**
+1. **Supervisor Policy:** Intercept `protocol.ErrOutcomeUnknown` on worker transport calls.
+2. **Quarantine Enforcement:** Prevent subsequent calls on quarantined worker instances; return `ErrWorkerQuarantined`.
+3. **Recycle Mechanism:** Provide `(s *Supervisor) SafeRecycle(ctx context.Context, wp *WorkerProcess)` that drains/terminates the poisoned worker and boots a fresh replacement instance.
+
+---
+
+### T-603 — Structured process manifest, syslog correlation, and crash signature classifier
+Status: DONE  
+Priority: P1  
+Dependencies: T-601
+
+**Objective:** Enhance process diagnostics with structured process manifests (`ProcessManifest`), syslog correlation across `SessionID`, `RequestID`, and `TxID`, and an automated crash signature classifier.
+
+**Technical Architecture:**
+1. **Process Manifest:** Capture exact NX build, .NET runtime, Agent binary checksum, startup arguments, and pipe security attributes.
+2. **Syslog Correlation:** Parser extracting NX syslog lines correlated with `[nxgo:req:<id>]` and `[nxgo:tx:<id>]`.
+3. **Crash Classifier:** `ClassifyCrash(output string, exitCode int) *CrashReport` identifying SEGV, AccessViolation, LicenseExpired, NXOpenUnhandledException, etc.
+
+---
+
+### T-604 — Resource high-watermark telemetry & graceful drain with recycling thresholds
+Status: DONE  
+Priority: P1  
+Dependencies: T-601, T-602
+
+**Objective:** Monitor worker resource consumption (memory RSS, active handle counts, execution duration) and execute graceful drain (`StateDraining`) when thresholds are exceeded before state becomes corrupted.
+
+**Technical Architecture:**
+1. **Telemetry:** `WorkerTelemetry` tracking memory usage, open handles, call count, and total execution time.
+2. **Recycling Policy:** Configurable thresholds (`MaxCallsPerWorker`, `MaxMemoryBytes`, `MaxLifetime`) triggering graceful drain after current transaction finishes.
+
+- [x] explicit worker state machine: starting / ready / busy / draining / dirty / poisoned / lost / stopped (T-601);
+- [x] quarantine reason codes (T-601);
+- [x] outcome-unknown propagation from protocol to supervisor (T-602);
+- [x] graceful drain before recycle where safe (T-602, T-604);
 - [ ] orphan cleanup with ownership verification;
-- [ ] structured process manifest with exact Agent/protocol/NX versions;
-- [ ] request/transaction/session/run correlation across Go/Agent/NX syslog;
-- [ ] artifact manifest containing hashes and test metadata;
-- [ ] crash signature classification;
-- [ ] resource high-watermark telemetry;
-- [ ] optional worker recycling thresholds based on measured soak evidence.
+- [x] structured process manifest with exact Agent/protocol/NX versions (T-603);
+- [x] request/transaction/session/run correlation across Go/Agent/NX syslog (T-603);
+- [x] artifact manifest containing hashes and test metadata (T-603);
+- [x] crash signature classification (T-603);
+- [x] resource high-watermark telemetry (T-604);
+- [x] optional worker recycling thresholds based on measured soak evidence (T-604).
 
 ---
 

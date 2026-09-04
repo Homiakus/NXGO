@@ -695,6 +695,36 @@ type PartQueryBodiesResponse struct {
 	Bodies []BodyInfoWire `json:"bodies"`
 }
 
+type GeometryQueryBulkAnalysisRequest struct {
+	PartRef               *ObjectHandleWire  `json:"part_ref,omitempty"`
+	BodyRefs              []ObjectHandleWire `json:"body_refs,omitempty"`
+	IncludeMassProperties bool               `json:"include_mass_properties"`
+	IncludeBoundingBox    bool               `json:"include_bounding_box"`
+	IncludeFacesAndEdges  bool               `json:"include_faces_and_edges"`
+	ProduceBodyHandles    bool               `json:"produce_body_handles"`
+}
+
+type BodyGeometryAnalysisWire struct {
+	BodyRef        *ObjectHandleWire                    `json:"body_ref,omitempty"`
+	Name           string                               `json:"name"`
+	SolidType      string                               `json:"solid_type"`
+	FaceCount      int                                  `json:"face_count"`
+	EdgeCount      int                                  `json:"edge_count"`
+	NativeTag      uint32                               `json:"native_tag,omitempty"`
+	MassProperties *GeometryQueryMassPropertiesResponse `json:"mass_properties,omitempty"`
+	BoundingBox    *GeometryQueryBoundingBoxResponse    `json:"bounding_box,omitempty"`
+}
+
+type GeometryQueryBulkAnalysisResponse struct {
+	Units         string                               `json:"units"`
+	BodyCount     int                                  `json:"body_count"`
+	SolidCount    int                                  `json:"solid_count"`
+	SheetCount    int                                  `json:"sheet_count"`
+	AggregateMass *GeometryQueryMassPropertiesResponse `json:"aggregate_mass,omitempty"`
+	AggregateBox  *GeometryQueryBoundingBoxResponse    `json:"aggregate_box,omitempty"`
+	Bodies        []BodyGeometryAnalysisWire           `json:"bodies"`
+}
+
 // Assembly operation payloads (Phase 7)
 
 type AssemblyAddComponentRequest struct {
@@ -754,6 +784,347 @@ type AssemblyRemoveComponentResponse struct {
 	Removed bool `json:"removed"`
 }
 
+// Assembly Constraint payloads (T-301)
+
+type AssemblyConstraintType string
+
+const (
+	ConstraintTypeTouch         AssemblyConstraintType = "touch"
+	ConstraintTypeConcentric    AssemblyConstraintType = "concentric"
+	ConstraintTypeFix           AssemblyConstraintType = "fix"
+	ConstraintTypeDistance      AssemblyConstraintType = "distance"
+	ConstraintTypeParallel      AssemblyConstraintType = "parallel"
+	ConstraintTypePerpendicular AssemblyConstraintType = "perpendicular"
+	ConstraintTypeCenter12      AssemblyConstraintType = "center12"
+	ConstraintTypeCenter22      AssemblyConstraintType = "center22"
+	ConstraintTypeAngle         AssemblyConstraintType = "angle"
+	ConstraintTypeFit           AssemblyConstraintType = "fit"
+	ConstraintTypeBond          AssemblyConstraintType = "bond"
+	ConstraintTypeAlignLock     AssemblyConstraintType = "align_lock"
+)
+
+type AssemblyConstraintAlignment string
+
+const (
+	ConstraintAlignmentInfer   AssemblyConstraintAlignment = "infer_align"
+	ConstraintAlignmentCo      AssemblyConstraintAlignment = "co_align"
+	ConstraintAlignmentContra  AssemblyConstraintAlignment = "contra_align"
+)
+
+type AssemblyCreateConstraintRequest struct {
+	AssemblyPartRef *ObjectHandleWire           `json:"assembly_part_ref,omitempty"`
+	Type            AssemblyConstraintType      `json:"type"`
+	Alignment       AssemblyConstraintAlignment `json:"alignment,omitempty"`
+	TargetRef1      ObjectHandleWire            `json:"target_ref_1"`
+	TargetRef2      *ObjectHandleWire           `json:"target_ref_2,omitempty"`
+	Offset          float64                     `json:"offset,omitempty"`
+	Name            string                      `json:"name,omitempty"`
+}
+
+type AssemblyCreateConstraintResponse struct {
+	ConstraintRef ObjectHandleWire `json:"constraint_ref"`
+	Name          string           `json:"name"`
+	Type          string           `json:"type"`
+	Alignment     string           `json:"alignment"`
+	Status        string           `json:"status"`
+	NativeTag     uint32           `json:"native_tag,omitempty"`
+}
+
+type AssemblyQueryConstraintsRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+}
+
+type AssemblyConstraintInfoWire struct {
+	ConstraintRef ObjectHandleWire `json:"constraint_ref"`
+	Name          string           `json:"name"`
+	Type          string           `json:"type"`
+	Alignment     string           `json:"alignment"`
+	Status        string           `json:"status"`
+	Suppressed    bool             `json:"suppressed"`
+	NativeTag     uint32           `json:"native_tag,omitempty"`
+}
+
+type AssemblyQueryConstraintsResponse struct {
+	Constraints []AssemblyConstraintInfoWire `json:"constraints"`
+}
+
+type AssemblyDeleteConstraintRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ConstraintRef   ObjectHandleWire  `json:"constraint_ref"`
+}
+
+type AssemblyDeleteConstraintResponse struct {
+	Deleted bool `json:"deleted"`
+}
+
+type AssemblySetConstraintSuppressedRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ConstraintRef   ObjectHandleWire  `json:"constraint_ref"`
+	Suppressed      bool              `json:"suppressed"`
+}
+
+type AssemblySetConstraintSuppressedResponse struct {
+	Suppressed bool `json:"suppressed"`
+}
+
+// Assembly Arrangements and Reference Sets payloads (T-302)
+
+type AssemblyCreateArrangementRequest struct {
+	AssemblyPartRef    *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	Name               string            `json:"name"`
+	BaseArrangementRef *ObjectHandleWire `json:"base_arrangement_ref,omitempty"`
+	Isolated           bool              `json:"isolated,omitempty"`
+}
+
+type AssemblyCreateArrangementResponse struct {
+	ArrangementRef      ObjectHandleWire `json:"arrangement_ref"`
+	Name                string           `json:"name"`
+	IsActive            bool             `json:"is_active"`
+	IgnoringConstraints bool             `json:"ignoring_constraints"`
+	NativeTag           uint32           `json:"native_tag,omitempty"`
+}
+
+type AssemblyQueryArrangementsRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+}
+
+type AssemblyArrangementInfoWire struct {
+	ArrangementRef      ObjectHandleWire `json:"arrangement_ref"`
+	Name                string           `json:"name"`
+	IsActive            bool             `json:"is_active"`
+	IgnoringConstraints bool             `json:"ignoring_constraints"`
+	NativeTag           uint32           `json:"native_tag,omitempty"`
+}
+
+type AssemblyQueryArrangementsResponse struct {
+	Arrangements          []AssemblyArrangementInfoWire `json:"arrangements"`
+	ActiveArrangementName string                        `json:"active_arrangement_name"`
+}
+
+type AssemblySetActiveArrangementRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ArrangementRef  ObjectHandleWire  `json:"arrangement_ref"`
+}
+
+type AssemblySetActiveArrangementResponse struct {
+	ActiveArrangementName string `json:"active_arrangement_name"`
+}
+
+type AssemblyDeleteArrangementRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ArrangementRef  ObjectHandleWire  `json:"arrangement_ref"`
+}
+
+type AssemblyDeleteArrangementResponse struct {
+	Deleted bool `json:"deleted"`
+}
+
+type PartCreateReferenceSetRequest struct {
+	PartRef    *ObjectHandleWire  `json:"part_ref,omitempty"`
+	Name       string             `json:"name"`
+	MemberRefs []ObjectHandleWire `json:"member_refs,omitempty"`
+}
+
+type PartCreateReferenceSetResponse struct {
+	ReferenceSetRef ObjectHandleWire `json:"reference_set_ref"`
+	Name            string           `json:"name"`
+	MemberCount     int              `json:"member_count"`
+	NativeTag       uint32           `json:"native_tag,omitempty"`
+}
+
+type PartQueryReferenceSetsRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type PartReferenceSetInfoWire struct {
+	ReferenceSetRef ObjectHandleWire `json:"reference_set_ref"`
+	Name            string           `json:"name"`
+	MemberCount     int              `json:"member_count"`
+	NativeTag       uint32           `json:"native_tag,omitempty"`
+}
+
+type PartQueryReferenceSetsResponse struct {
+	ReferenceSets []PartReferenceSetInfoWire `json:"reference_sets"`
+}
+
+type PartModifyReferenceSetMembersRequest struct {
+	PartRef          *ObjectHandleWire  `json:"part_ref,omitempty"`
+	ReferenceSetRef  ObjectHandleWire   `json:"reference_set_ref"`
+	AddMemberRefs    []ObjectHandleWire `json:"add_member_refs,omitempty"`
+	RemoveMemberRefs []ObjectHandleWire `json:"remove_member_refs,omitempty"`
+}
+
+type PartModifyReferenceSetMembersResponse struct {
+	MemberCount int `json:"member_count"`
+}
+
+type PartDeleteReferenceSetRequest struct {
+	PartRef         *ObjectHandleWire `json:"part_ref,omitempty"`
+	ReferenceSetRef ObjectHandleWire  `json:"reference_set_ref"`
+}
+
+type PartDeleteReferenceSetResponse struct {
+	Deleted bool `json:"deleted"`
+}
+
+type AssemblySetComponentReferenceSetRequest struct {
+	AssemblyPartRef  *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ComponentRef     ObjectHandleWire  `json:"component_ref"`
+	ReferenceSetName string            `json:"reference_set_name"`
+}
+
+type AssemblySetComponentReferenceSetResponse struct {
+	ReferenceSetName string `json:"reference_set_name"`
+}
+
+// Assembly Suppression and Load-state semantics payloads (T-303)
+
+type AssemblySuppressComponentsRequest struct {
+	AssemblyPartRef *ObjectHandleWire  `json:"assembly_part_ref,omitempty"`
+	ComponentRefs   []ObjectHandleWire `json:"component_refs"`
+}
+
+type AssemblySuppressComponentsResponse struct {
+	SuppressedCount int `json:"suppressed_count"`
+}
+
+type AssemblyUnsuppressComponentsRequest struct {
+	AssemblyPartRef *ObjectHandleWire  `json:"assembly_part_ref,omitempty"`
+	ComponentRefs   []ObjectHandleWire `json:"component_refs"`
+}
+
+type AssemblyUnsuppressComponentsResponse struct {
+	UnsuppressedCount int `json:"unsuppressed_count"`
+}
+
+type AssemblyQueryComponentStateRequest struct {
+	AssemblyPartRef *ObjectHandleWire `json:"assembly_part_ref,omitempty"`
+	ComponentRef    ObjectHandleWire  `json:"component_ref"`
+}
+
+type AssemblyQueryComponentStateResponse struct {
+	ComponentRef ObjectHandleWire `json:"component_ref"`
+	Name         string           `json:"name"`
+	IsSuppressed bool             `json:"is_suppressed"`
+	IsLoaded     bool             `json:"is_loaded"`
+	ReferenceSet string           `json:"reference_set"`
+	NativeTag    uint32           `json:"native_tag,omitempty"`
+}
+
+type AssemblyOpenComponentsRequest struct {
+	AssemblyPartRef *ObjectHandleWire  `json:"assembly_part_ref,omitempty"`
+	ComponentRefs   []ObjectHandleWire `json:"component_refs"`
+	Option          string             `json:"option,omitempty"` // "component_only", "immediate_children", "whole_assembly"
+}
+
+type AssemblyOpenComponentsResponse struct {
+	OpenedCount int `json:"opened_count"`
+}
+
+type AssemblyCloseComponentsRequest struct {
+	AssemblyPartRef *ObjectHandleWire  `json:"assembly_part_ref,omitempty"`
+	ComponentRefs   []ObjectHandleWire `json:"component_refs"`
+	WholeTree       bool               `json:"whole_tree,omitempty"`
+	CloseModified   bool               `json:"close_modified,omitempty"`
+}
+
+type AssemblyCloseComponentsResponse struct {
+	ClosedCount int `json:"closed_count"`
+}
+
+// Assembly Interpart References Policy payloads (T-304)
+
+type InterpartReferenceWire struct {
+	PartRef   ObjectHandleWire `json:"part_ref"`
+	PartPath  string           `json:"part_path"`
+	PartName  string           `json:"part_name"`
+	NativeTag uint32           `json:"native_tag,omitempty"`
+	Direction string           `json:"direction"` // "parent" or "child"
+}
+
+type AssemblyQueryInterpartReferencesRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref"`
+}
+
+type AssemblyQueryInterpartReferencesResponse struct {
+	PartRef    ObjectHandleWire         `json:"part_ref"`
+	Parents    []InterpartReferenceWire `json:"parents"`
+	Children   []InterpartReferenceWire `json:"children"`
+	TotalCount int                      `json:"total_count"`
+}
+
+type AssemblyGetInterpartPolicyRequest struct{}
+
+type AssemblyGetInterpartPolicyResponse struct {
+	InterpartDelay      bool   `json:"interpart_delay"`
+	InterpartDataOption string `json:"interpart_data_option"`
+	ParentLoadOption    string `json:"parent_load_option"`
+}
+
+type AssemblySetInterpartPolicyRequest struct {
+	InterpartDelay      *bool   `json:"interpart_delay,omitempty"`
+	InterpartDataOption *string `json:"interpart_data_option,omitempty"`
+	ParentLoadOption    *string `json:"parent_load_option,omitempty"`
+}
+
+type AssemblySetInterpartPolicyResponse struct {
+	InterpartDelay      bool   `json:"interpart_delay"`
+	InterpartDataOption string `json:"interpart_data_option"`
+	ParentLoadOption    string `json:"parent_load_option"`
+}
+
+type AssemblyUpdateInterpartReferencesRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+	Scope   string            `json:"scope,omitempty"` // "assembly", "session", "part"
+}
+
+type AssemblyUpdateInterpartReferencesResponse struct {
+	Updated bool `json:"updated"`
+}
+
+// Large-Assembly Bulk Query Path payloads (T-305)
+
+type AssemblyBulkComponentItem struct {
+	Name          string     `json:"name"`
+	DisplayName   string     `json:"display_name"`
+	PartPath      string     `json:"part_path"`
+	PartName      string     `json:"part_name"`
+	Depth         int        `json:"depth"`
+	IsSuppressed  bool       `json:"is_suppressed"`
+	IsLoaded      bool       `json:"is_loaded"`
+	ReferenceSet  string     `json:"reference_set"`
+	NativeTag     uint32     `json:"native_tag,omitempty"`
+	Position      [3]float64 `json:"position,omitempty"`
+	Orientation   [9]float64 `json:"orientation,omitempty"`
+	BoxMin        [3]float64 `json:"box_min,omitempty"`
+	BoxMax        [3]float64 `json:"box_max,omitempty"`
+	ChildrenCount int        `json:"children_count"`
+}
+
+type AssemblyQueryBulkRequest struct {
+	AssemblyPartRef    *ObjectHandleWire `json:"assembly_part_ref"`
+	MaxDepth           int               `json:"max_depth,omitempty"`
+	IncludeSuppressed  bool              `json:"include_suppressed,omitempty"`
+	IncludeTransforms  bool              `json:"include_transforms,omitempty"`
+	IncludeBoundingBox bool              `json:"include_bounding_box,omitempty"`
+	NameFilter         string            `json:"name_filter,omitempty"`
+	Offset             int               `json:"offset,omitempty"`
+	Limit              int               `json:"limit,omitempty"`
+}
+
+type AssemblyQueryBulkResponse struct {
+	AssemblyPartRef  ObjectHandleWire            `json:"assembly_part_ref"`
+	TotalComponents  int                         `json:"total_components"`
+	TotalLoaded      int                         `json:"total_loaded"`
+	TotalSuppressed  int                         `json:"total_suppressed"`
+	UniquePartsCount int                         `json:"unique_parts_count"`
+	Components       []AssemblyBulkComponentItem `json:"components"`
+	HasMore          bool                        `json:"has_more"`
+}
+
+
+
+
 // Drafting & PDF Export operation payloads (Phase 8)
 
 type DraftingCreateSheetRequest struct {
@@ -802,5 +1173,103 @@ type DraftingSheetInfoWire struct {
 
 type DraftingQuerySheetsResponse struct {
 	Sheets []DraftingSheetInfoWire `json:"sheets"`
+}
+
+type DraftingCreateStandardViewsRequest struct {
+	PartRef            *ObjectHandleWire `json:"part_ref,omitempty"`
+	Layout             string            `json:"layout,omitempty"` // "front_top_right_iso", "front_top_right", "front_top", "front_right"
+	MarginBetweenViews float64           `json:"margin_between_views,omitempty"`
+	MarginToBorder     float64           `json:"margin_to_border,omitempty"`
+}
+
+type DraftingCreateStandardViewsResponse struct {
+	Created   bool     `json:"created"`
+	Layout    string   `json:"layout"`
+	ViewCount int      `json:"view_count"`
+	Views     []string `json:"views"`
+}
+
+type DraftingAddNoteRequest struct {
+	PartRef   *ObjectHandleWire `json:"part_ref,omitempty"`
+	TextLines []string          `json:"text_lines"`
+	OriginX   float64           `json:"origin_x"`
+	OriginY   float64           `json:"origin_y"`
+	Anchor    string            `json:"anchor,omitempty"`    // "bottom_left", "bottom_right", "top_left", "top_right", "mid_center"
+	TextSize  float64           `json:"text_size,omitempty"` // mm
+}
+
+type DraftingAddNoteResponse struct {
+	Added     bool    `json:"added"`
+	LineCount int     `json:"line_count"`
+	OriginX   float64 `json:"origin_x"`
+	OriginY   float64 `json:"origin_y"`
+}
+
+// Expression and Parameter API payloads (Phase D2)
+
+type ExpressionCreateRequest struct {
+	PartRef     *ObjectHandleWire `json:"part_ref,omitempty"`
+	Name        string            `json:"name"`
+	Formula     string            `json:"formula"`
+	Type        string            `json:"type,omitempty"` // "Number", "String", "Integer", "Boolean"
+	Units       string            `json:"units,omitempty"` // "mm", "inch", "degrees", etc.
+	Description string            `json:"description,omitempty"`
+}
+
+type ExpressionCreateResponse struct {
+	ExpressionRef ObjectHandleWire `json:"expression_ref"`
+	Name          string           `json:"name"`
+	Formula       string           `json:"formula"`
+	Value         float64          `json:"value"`
+	StringValue   string           `json:"string_value,omitempty"`
+	Type          string           `json:"type"`
+	Units         string           `json:"units,omitempty"`
+	NativeTag     uint32           `json:"native_tag,omitempty"`
+}
+
+type ExpressionQueryRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+	Name    string            `json:"name,omitempty"` // empty queries all expressions in part
+}
+
+type ExpressionInfoWire struct {
+	ExpressionRef ObjectHandleWire `json:"expression_ref"`
+	Name          string           `json:"name"`
+	Formula       string           `json:"formula"`
+	Value         float64          `json:"value"`
+	StringValue   string           `json:"string_value,omitempty"`
+	Type          string           `json:"type"`
+	Units         string           `json:"units,omitempty"`
+	NativeTag     uint32           `json:"native_tag,omitempty"`
+}
+
+type ExpressionQueryResponse struct {
+	Expressions []ExpressionInfoWire `json:"expressions"`
+}
+
+type ExpressionEditRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	ExpressionRef *ObjectHandleWire `json:"expression_ref,omitempty"`
+	Name          string            `json:"name,omitempty"`
+	Formula       string            `json:"formula"`
+}
+
+type ExpressionEditResponse struct {
+	ExpressionRef ObjectHandleWire `json:"expression_ref"`
+	Name          string           `json:"name"`
+	Formula       string           `json:"formula"`
+	Value         float64          `json:"value"`
+	StringValue   string           `json:"string_value,omitempty"`
+	Updated       bool             `json:"updated"`
+}
+
+type ExpressionDeleteRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	ExpressionRef *ObjectHandleWire `json:"expression_ref,omitempty"`
+	Name          string            `json:"name,omitempty"`
+}
+
+type ExpressionDeleteResponse struct {
+	Deleted bool `json:"deleted"`
 }
 

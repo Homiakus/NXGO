@@ -37,10 +37,19 @@ public static partial class EntryPoint
         "object.release", "feature.create_block", "feature.create_cylinder", "feature.boolean",
         "feature.create_hole", "datum.create_plane", "datum.create_axis", "datum.create_csys",
         "sketch.create", "sketch.add_geometry", "sketch.query_status", "sketch.create_profile", "feature.create_extrude", "feature.create_revolve", "feature.create_fillet", "feature.create_chamfer", "feature.create_pattern",
-        "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
+        "expression.create", "expression.query", "expression.edit", "expression.delete",
+        "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box", "geometry.query_bulk_analysis",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
         "assembly.query_tree", "assembly.query_bom", "assembly.remove_component",
-        "drafting.create_sheet", "drafting.query_sheets", "drafting.export_pdf", "shutdown",
+        "assembly.create_constraint", "assembly.query_constraints", "assembly.delete_constraint", "assembly.set_constraint_suppressed",
+        "assembly.create_arrangement", "assembly.query_arrangements", "assembly.set_active_arrangement", "assembly.delete_arrangement",
+        "part.create_reference_set", "part.query_reference_sets", "part.modify_reference_set_members", "part.delete_reference_set",
+        "assembly.set_component_reference_set",
+        "assembly.suppress_components", "assembly.unsuppress_components", "assembly.query_component_state",
+        "assembly.open_components", "assembly.close_components",
+        "assembly.query_interpart_references", "assembly.get_interpart_policy", "assembly.set_interpart_policy", "assembly.update_interpart_references",
+        "assembly.query_bulk",
+        "drafting.create_sheet", "drafting.query_sheets", "drafting.create_standard_views", "drafting.add_note", "drafting.export_pdf", "shutdown",
     };
     private static readonly Dictionary<string, MutationOutcomeClass> MutationClasses = new Dictionary<string, MutationOutcomeClass>(StringComparer.Ordinal)
     {
@@ -54,10 +63,25 @@ public static partial class EntryPoint
         ["datum.create_csys"] = MutationOutcomeClass.Transactional,
         ["sketch.create"] = MutationOutcomeClass.Transactional, ["sketch.add_geometry"] = MutationOutcomeClass.Transactional,
         ["sketch.create_profile"] = MutationOutcomeClass.Transactional, ["feature.create_extrude"] = MutationOutcomeClass.Transactional, ["feature.create_revolve"] = MutationOutcomeClass.Transactional, ["feature.create_fillet"] = MutationOutcomeClass.Transactional, ["feature.create_chamfer"] = MutationOutcomeClass.Transactional, ["feature.create_pattern"] = MutationOutcomeClass.Transactional,
+        ["expression.create"] = MutationOutcomeClass.Transactional, ["expression.edit"] = MutationOutcomeClass.Transactional, ["expression.delete"] = MutationOutcomeClass.Transactional,
         ["transaction.begin"] = MutationOutcomeClass.Transactional, ["transaction.commit"] = MutationOutcomeClass.Transactional,
         ["transaction.rollback"] = MutationOutcomeClass.Transactional,
         ["assembly.add_component"] = MutationOutcomeClass.Transactional, ["assembly.remove_component"] = MutationOutcomeClass.Transactional,
-        ["drafting.create_sheet"] = MutationOutcomeClass.Transactional, ["drafting.export_pdf"] = MutationOutcomeClass.Transactional,
+        ["assembly.create_constraint"] = MutationOutcomeClass.Transactional, ["assembly.delete_constraint"] = MutationOutcomeClass.Transactional,
+        ["assembly.set_constraint_suppressed"] = MutationOutcomeClass.Transactional,
+        ["assembly.create_arrangement"] = MutationOutcomeClass.Transactional, ["assembly.set_active_arrangement"] = MutationOutcomeClass.Transactional,
+        ["assembly.delete_arrangement"] = MutationOutcomeClass.Transactional,
+        ["part.create_reference_set"] = MutationOutcomeClass.Transactional, ["part.modify_reference_set_members"] = MutationOutcomeClass.Transactional,
+        ["part.delete_reference_set"] = MutationOutcomeClass.Transactional,
+        ["assembly.set_component_reference_set"] = MutationOutcomeClass.Transactional,
+        ["assembly.suppress_components"] = MutationOutcomeClass.Transactional,
+        ["assembly.unsuppress_components"] = MutationOutcomeClass.Transactional,
+        ["assembly.open_components"] = MutationOutcomeClass.Transactional,
+        ["assembly.close_components"] = MutationOutcomeClass.Transactional,
+        ["assembly.set_interpart_policy"] = MutationOutcomeClass.Transactional,
+        ["assembly.update_interpart_references"] = MutationOutcomeClass.Transactional,
+        ["drafting.create_sheet"] = MutationOutcomeClass.Transactional, ["drafting.create_standard_views"] = MutationOutcomeClass.Transactional,
+        ["drafting.add_note"] = MutationOutcomeClass.Transactional, ["drafting.export_pdf"] = MutationOutcomeClass.Transactional,
     };
     private static volatile bool _shutdownRequested;
     private static volatile bool _authenticated;
@@ -328,12 +352,22 @@ public static partial class EntryPoint
                     return StartCreateChamfer(executor, requestId, requestPayload, token);
                 case "feature.create_pattern":
                     return StartCreatePattern(executor, requestId, requestPayload, token);
+                case "expression.create":
+                    return StartCreateExpression(executor, requestId, requestPayload, token);
+                case "expression.query":
+                    return StartQueryExpressions(executor, requestId, requestPayload, token);
+                case "expression.edit":
+                    return StartEditExpression(executor, requestId, requestPayload, token);
+                case "expression.delete":
+                    return StartDeleteExpression(executor, requestId, requestPayload, token);
                 case "part.query_bodies":
                     return StartQueryBodies(executor, requestId, requestPayload, token);
                 case "geometry.query_mass_properties":
                     return StartMassProperties(executor, requestId, requestPayload, token);
                 case "geometry.query_bounding_box":
                     return StartBoundingBox(executor, requestId, requestPayload, token);
+                case "geometry.query_bulk_analysis":
+                    return StartQueryBulkGeometry(executor, requestId, requestPayload, token);
                 case "transaction.begin":
                     return StartTransactionBegin(session, executor, requestId, requestPayload, token);
                 case "transaction.commit":
@@ -348,10 +382,60 @@ public static partial class EntryPoint
                     return StartAssemblyQueryBOM(executor, requestId, requestPayload, token);
                 case "assembly.remove_component":
                     return StartAssemblyRemoveComponent(executor, requestId, requestPayload, token);
+                case "assembly.create_constraint":
+                    return StartAssemblyCreateConstraint(executor, requestId, requestPayload, token);
+                case "assembly.query_constraints":
+                    return StartAssemblyQueryConstraints(executor, requestId, requestPayload, token);
+                case "assembly.delete_constraint":
+                    return StartAssemblyDeleteConstraint(session, executor, requestId, requestPayload, token);
+                case "assembly.set_constraint_suppressed":
+                    return StartAssemblySetConstraintSuppressed(session, executor, requestId, requestPayload, token);
+                case "assembly.create_arrangement":
+                    return StartAssemblyCreateArrangement(executor, requestId, requestPayload, token);
+                case "assembly.query_arrangements":
+                    return StartAssemblyQueryArrangements(executor, requestId, requestPayload, token);
+                case "assembly.set_active_arrangement":
+                    return StartAssemblySetActiveArrangement(executor, requestId, requestPayload, token);
+                case "assembly.delete_arrangement":
+                    return StartAssemblyDeleteArrangement(session, executor, requestId, requestPayload, token);
+                case "part.create_reference_set":
+                    return StartPartCreateReferenceSet(executor, requestId, requestPayload, token);
+                case "part.query_reference_sets":
+                    return StartPartQueryReferenceSets(executor, requestId, requestPayload, token);
+                case "part.modify_reference_set_members":
+                    return StartPartModifyReferenceSetMembers(executor, requestId, requestPayload, token);
+                case "part.delete_reference_set":
+                    return StartPartDeleteReferenceSet(session, executor, requestId, requestPayload, token);
+                case "assembly.set_component_reference_set":
+                    return StartAssemblySetComponentReferenceSet(executor, requestId, requestPayload, token);
+                case "assembly.suppress_components":
+                    return StartAssemblySuppressComponents(executor, requestId, requestPayload, token);
+                case "assembly.unsuppress_components":
+                    return StartAssemblyUnsuppressComponents(executor, requestId, requestPayload, token);
+                case "assembly.query_component_state":
+                    return StartAssemblyQueryComponentState(executor, requestId, requestPayload, token);
+                case "assembly.open_components":
+                    return StartAssemblyOpenComponents(executor, requestId, requestPayload, token);
+                case "assembly.close_components":
+                    return StartAssemblyCloseComponents(executor, requestId, requestPayload, token);
+                case "assembly.query_interpart_references":
+                    return StartAssemblyQueryInterpartReferences(executor, requestId, requestPayload, token);
+                case "assembly.get_interpart_policy":
+                    return StartAssemblyGetInterpartPolicy(session, executor, requestId, requestPayload, token);
+                case "assembly.set_interpart_policy":
+                    return StartAssemblySetInterpartPolicy(session, executor, requestId, requestPayload, token);
+                case "assembly.update_interpart_references":
+                    return StartAssemblyUpdateInterpartReferences(session, executor, requestId, requestPayload, token);
+                case "assembly.query_bulk":
+                    return StartAssemblyQueryBulk(executor, requestId, requestPayload, token);
                 case "drafting.create_sheet":
                     return StartDraftingCreateSheet(executor, requestId, requestPayload, token);
                 case "drafting.query_sheets":
                     return StartDraftingQuerySheets(executor, requestId, requestPayload, token);
+                case "drafting.create_standard_views":
+                    return StartDraftingCreateStandardViews(executor, requestId, requestPayload, token);
+                case "drafting.add_note":
+                    return StartDraftingAddNote(executor, requestId, requestPayload, token);
                 case "drafting.export_pdf":
                     return StartDraftingExportPdf(executor, requestId, requestPayload, token);
 
@@ -1016,8 +1100,18 @@ public static partial class EntryPoint
 
     private static ObjectHandleToken RequireHandle(Dictionary<string, object> payload, string key, string expectedKind)
     {
+        var token = RequireAnyHandle(payload, key);
+        if (!string.IsNullOrEmpty(expectedKind) && !string.Equals(token.Kind, expectedKind, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new StaleObjectHandleException($"wrong object kind for {token.ObjectId}: got {token.Kind}, expected {expectedKind}");
+        }
+        return token;
+    }
+
+    private static ObjectHandleToken RequireAnyHandle(Dictionary<string, object> payload, string key)
+    {
         var raw = GetObject(payload, key, required: true)!;
-        var token = new ObjectHandleToken
+        return new ObjectHandleToken
         {
             SessionId = GetString(raw, "session_id", string.Empty),
             Epoch = GetUInt64(raw, "epoch"),
@@ -1026,11 +1120,23 @@ public static partial class EntryPoint
             Kind = GetString(raw, "kind", string.Empty),
             LeaseScopeId = GetString(raw, "lease_scope_id", string.Empty),
         };
-        if (!string.Equals(token.Kind, expectedKind, StringComparison.OrdinalIgnoreCase))
+    }
+
+    private static ObjectHandleToken? TryGetHandle(Dictionary<string, object> payload, string key)
+    {
+        var raw = GetObject(payload, key, required: false);
+        if (raw == null) return null;
+        var objId = GetString(raw, "object_id", string.Empty);
+        if (string.IsNullOrWhiteSpace(objId)) return null;
+        return new ObjectHandleToken
         {
-            throw new StaleObjectHandleException($"wrong object kind for {token.ObjectId}: got {token.Kind}, expected {expectedKind}");
-        }
-        return token;
+            SessionId = GetString(raw, "session_id", string.Empty),
+            Epoch = GetUInt64(raw, "epoch"),
+            ObjectId = objId,
+            Generation = GetUInt32(raw, "generation"),
+            Kind = GetString(raw, "kind", string.Empty),
+            LeaseScopeId = GetString(raw, "lease_scope_id", string.Empty),
+        };
     }
 
     private static List<ObjectHandleToken> ExtractHandleList(Dictionary<string, object> payload, string key, string expectedKind)

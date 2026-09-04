@@ -51,6 +51,7 @@ type WorkerProcess struct {
 	cmd           *exec.Cmd
 	waitDone      <-chan error
 	output        *synchronizedBuffer
+	sm            *StateMachine
 	mu            sync.Mutex
 	stopped       bool
 	quarantineErr error
@@ -195,11 +196,13 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		cmd:      cmd,
 		waitDone: waitDone,
 		output:   &outBuf,
+		sm:       NewStateMachine(),
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, cfg.PipeName)
 	client, err := waitForPipe(ctx, pipePath, cfg.StartupTimeout, waitDone, &outBuf)
 	if err != nil {
+		_ = wp.sm.Transition(StateLost, err)
 		_ = cmd.Process.Kill()
 		_ = waitForWorkerExit(waitDone, 2*time.Second)
 		if outBuf.Len() > 0 {
@@ -226,9 +229,12 @@ func StartWorker(ctx context.Context, cfg WorkerConfig) (*WorkerProcess, error) 
 		Nonce:           cfg.WorkerNonce,
 	})
 	if err != nil {
+		_ = wp.sm.Transition(StatePoisoned, err)
 		_ = wp.Kill()
 		return nil, fmt.Errorf("worker handshake failed: %w", err)
 	}
+
+	_ = wp.sm.Transition(StateReady, nil)
 
 	wp.Manifest = &WorkerManifest{
 		ID:          hsResp.SessionID,
@@ -392,6 +398,9 @@ func (wp *WorkerProcess) quarantine(cause error) {
 	if wp.quarantineErr == nil {
 		wp.quarantineErr = cause
 	}
+	if wp.sm != nil {
+		wp.sm.Quarantine(QuarantineTimeoutAmbiguity, cause)
+	}
 	alreadyStopped := wp.stopped
 	wp.stopped = true
 	client := wp.Client
@@ -407,6 +416,73 @@ func (wp *WorkerProcess) quarantine(cause error) {
 	if !alreadyStopped && process != nil {
 		_ = process.Kill()
 	}
+}
+
+// State reports the current explicit lifecycle state of the worker.
+func (wp *WorkerProcess) State() WorkerState {
+	wp.mu.Lock()
+	sm := wp.sm
+	wp.mu.Unlock()
+	if sm == nil {
+		return StateStarting
+	}
+	return sm.Current()
+}
+
+// StateMachine returns the underlying lifecycle state machine.
+func (wp *WorkerProcess) StateMachine() *StateMachine {
+	wp.mu.Lock()
+	defer wp.mu.Unlock()
+	return wp.sm
+}
+
+// Transition performs a thread-safe validated lifecycle transition.
+func (wp *WorkerProcess) Transition(to WorkerState, reason error) error {
+	wp.mu.Lock()
+	sm := wp.sm
+	wp.mu.Unlock()
+	if sm == nil {
+		return ErrInvalidStateTransition
+	}
+	return sm.Transition(to, reason)
+}
+
+// Quarantine puts the worker into StatePoisoned with an explicit reason code and error.
+func (wp *WorkerProcess) Quarantine(code QuarantineReasonCode, reason error) {
+	wp.mu.Lock()
+	if wp.quarantineErr == nil {
+		wp.quarantineErr = reason
+	}
+	if wp.sm != nil {
+		wp.sm.Quarantine(code, reason)
+	}
+	alreadyStopped := wp.stopped
+	wp.stopped = true
+	client := wp.Client
+	var process *os.Process
+	if wp.cmd != nil {
+		process = wp.cmd.Process
+	}
+	wp.mu.Unlock()
+
+	if client != nil {
+		_ = client.Close()
+	}
+	if !alreadyStopped && process != nil {
+		_ = process.Kill()
+	}
+}
+
+// QuarantineCode reports the active quarantine reason code if quarantined.
+func (wp *WorkerProcess) QuarantineCode() QuarantineReasonCode {
+	wp.mu.Lock()
+	sm := wp.sm
+	wp.mu.Unlock()
+	if sm == nil {
+		return QuarantineNone
+	}
+	code, _ := sm.QuarantineInfo()
+	return code
 }
 
 // QuarantineReason reports why this worker was made permanently unusable. A
@@ -449,6 +525,9 @@ func (wp *WorkerProcess) Stop(ctx context.Context) error {
 		return nil
 	}
 	wp.stopped = true
+	if wp.sm != nil {
+		_ = wp.sm.Transition(StateStopped, nil)
+	}
 	client := wp.Client
 	var process *os.Process
 	if wp.cmd != nil {
@@ -483,6 +562,9 @@ func (wp *WorkerProcess) Kill() error {
 	wp.mu.Lock()
 	alreadyStopped := wp.stopped
 	wp.stopped = true
+	if wp.sm != nil {
+		_ = wp.sm.Transition(StateStopped, nil)
+	}
 	client := wp.Client
 	var process *os.Process
 	if wp.cmd != nil {

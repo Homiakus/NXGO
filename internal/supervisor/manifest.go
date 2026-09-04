@@ -1,6 +1,8 @@
 package supervisor
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,35 @@ func (m *WorkerManifest) Validate() error {
 		return fmt.Errorf("%w: missing required fields (id, pid, nx_home, endpoint)", ErrInvalidManifest)
 	}
 	return nil
+}
+
+// ProcessManifest captures comprehensive diagnostic and versioning details about a running or archived worker process.
+type ProcessManifest struct {
+	SessionID      string            `json:"session_id"`
+	PID            int               `json:"pid"`
+	NXHome         string            `json:"nx_home"`
+	NXRelease      string            `json:"nx_release"`
+	DotnetVersion  string            `json:"dotnet_version,omitempty"`
+	AgentBinPath   string            `json:"agent_bin_path"`
+	AgentHash      string            `json:"agent_hash,omitempty"`
+	Endpoint       string            `json:"endpoint"`
+	PipeSecurity   string            `json:"pipe_security,omitempty"`
+	CommandLine    []string          `json:"command_line,omitempty"`
+	Environment    map[string]string `json:"environment,omitempty"`
+	StartedAtUTC   string            `json:"started_at_utc"`
+	Owner          string            `json:"owner"`
+	Mode           string            `json:"mode"`
+	ArtifactDir    string            `json:"artifact_dir,omitempty"`
+}
+
+// ComputeFileSHA256 returns hex-encoded SHA-256 checksum of a file.
+func ComputeFileSHA256(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func SaveManifest(path string, m *WorkerManifest) error {
