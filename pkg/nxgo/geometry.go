@@ -58,6 +58,44 @@ type HoleParams struct {
 	CountersinkAngle    float64
 }
 
+type DatumPlaneParams struct {
+	Origin    Point3D
+	Direction Vector3D // normal vector, defaults to [0, 0, 1]
+}
+
+type DatumPlane struct {
+	session    *Session
+	Ref        protocol.ObjectHandleWire
+	FeatureRef protocol.ObjectHandleWire
+	Name       string
+}
+
+type DatumAxisParams struct {
+	Origin    Point3D
+	Direction Vector3D // axis direction, defaults to [0, 0, 1]
+}
+
+type DatumAxis struct {
+	session    *Session
+	Ref        protocol.ObjectHandleWire
+	FeatureRef protocol.ObjectHandleWire
+	Name       string
+}
+
+type DatumCsysParams struct {
+	Origin     Point3D
+	XDirection Vector3D // defaults to [1, 0, 0]
+	YDirection Vector3D // defaults to [0, 1, 0]
+}
+
+type DatumCsys struct {
+	session    *Session
+	Ref        protocol.ObjectHandleWire
+	FeatureRef protocol.ObjectHandleWire
+	Name       string
+}
+
+
 type MassProperties struct {
 	Units     string
 	Volume    float64
@@ -365,6 +403,128 @@ func (p *Part) CreateHole(ctx context.Context, params HoleParams) (*Feature, err
 		BodyRef: payload.BodyRef,
 		Name:    payload.FeatureName,
 		Type:    payload.FeatureType,
+	}, nil
+}
+
+func (p *Part) CreateDatumPlane(ctx context.Context, params DatumPlaneParams) (*DatumPlane, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	dir := params.Direction
+	if dir[0] == 0 && dir[1] == 0 && dir[2] == 0 {
+		dir = Vector3D{0, 0, 1}
+	}
+	reqData, err := protocol.EncodePayload(protocol.DatumCreatePlaneRequest{
+		PartRef:   &p.Ref,
+		Origin:    params.Origin,
+		Direction: dir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("datum.create_plane"),
+		Op:        "datum.create_plane",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.DatumCreatePlaneResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &DatumPlane{
+		session:    p.session,
+		Ref:        payload.PlaneRef,
+		FeatureRef: payload.FeatureRef,
+		Name:       payload.Name,
+	}, nil
+}
+
+func (p *Part) CreateDatumAxis(ctx context.Context, params DatumAxisParams) (*DatumAxis, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	dir := params.Direction
+	if dir[0] == 0 && dir[1] == 0 && dir[2] == 0 {
+		dir = Vector3D{0, 0, 1}
+	}
+	reqData, err := protocol.EncodePayload(protocol.DatumCreateAxisRequest{
+		PartRef:   &p.Ref,
+		Origin:    params.Origin,
+		Direction: dir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("datum.create_axis"),
+		Op:        "datum.create_axis",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.DatumCreateAxisResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &DatumAxis{
+		session:    p.session,
+		Ref:        payload.AxisRef,
+		FeatureRef: payload.FeatureRef,
+		Name:       payload.Name,
+	}, nil
+}
+
+func (p *Part) CreateDatumCsys(ctx context.Context, params DatumCsysParams) (*DatumCsys, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	xDir := params.XDirection
+	if xDir[0] == 0 && xDir[1] == 0 && xDir[2] == 0 {
+		xDir = Vector3D{1, 0, 0}
+	}
+	yDir := params.YDirection
+	if yDir[0] == 0 && yDir[1] == 0 && yDir[2] == 0 {
+		yDir = Vector3D{0, 1, 0}
+	}
+	reqData, err := protocol.EncodePayload(protocol.DatumCreateCsysRequest{
+		PartRef:    &p.Ref,
+		Origin:     params.Origin,
+		XDirection: xDir,
+		YDirection: yDir,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("datum.create_csys"),
+		Op:        "datum.create_csys",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.DatumCreateCsysResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &DatumCsys{
+		session:    p.session,
+		Ref:        payload.CsysRef,
+		FeatureRef: payload.FeatureRef,
+		Name:       payload.Name,
 	}, nil
 }
 

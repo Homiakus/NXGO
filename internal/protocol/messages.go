@@ -444,6 +444,44 @@ type FeatureCreateHoleResponse struct {
 	FeatureType string           `json:"feature_type"`
 }
 
+type DatumCreatePlaneRequest struct {
+	PartRef   *ObjectHandleWire `json:"part_ref,omitempty"`
+	Origin    [3]float64        `json:"origin"`
+	Direction [3]float64        `json:"direction"`
+}
+
+type DatumCreatePlaneResponse struct {
+	PlaneRef   ObjectHandleWire `json:"plane_ref"`
+	FeatureRef ObjectHandleWire `json:"feature_ref"`
+	Name       string           `json:"name"`
+}
+
+type DatumCreateAxisRequest struct {
+	PartRef   *ObjectHandleWire `json:"part_ref,omitempty"`
+	Origin    [3]float64        `json:"origin"`
+	Direction [3]float64        `json:"direction"`
+}
+
+type DatumCreateAxisResponse struct {
+	AxisRef    ObjectHandleWire `json:"axis_ref"`
+	FeatureRef ObjectHandleWire `json:"feature_ref"`
+	Name       string           `json:"name"`
+}
+
+type DatumCreateCsysRequest struct {
+	PartRef    *ObjectHandleWire `json:"part_ref,omitempty"`
+	Origin     [3]float64        `json:"origin"`
+	XDirection [3]float64        `json:"x_direction"`
+	YDirection [3]float64        `json:"y_direction"`
+}
+
+type DatumCreateCsysResponse struct {
+	CsysRef    ObjectHandleWire `json:"csys_ref"`
+	FeatureRef ObjectHandleWire `json:"feature_ref"`
+	Name       string           `json:"name"`
+}
+
+
 
 type GeometryQueryMassPropertiesRequest struct {
 	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`

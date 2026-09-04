@@ -517,6 +517,131 @@ public static partial class EntryPoint
         }, token));
     }
 
+    private static Task<byte[]> StartDatumCreatePlane(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
+        var direction = GetDoubleArray(payload, "direction", 3, new[] { 0.0, 0.0, 1.0 });
+        if (direction[0] == 0 && direction[1] == 0 && direction[2] == 0) direction[2] = 1.0;
+
+        var len = Math.Sqrt(direction[0] * direction[0] + direction[1] * direction[1] + direction[2] * direction[2]);
+        var nz = direction[2] / len;
+        var nx = direction[0] / len;
+        var ny = direction[1] / len;
+
+        double tx = Math.Abs(nx) < 0.9 && Math.Abs(ny) < 0.9 ? 0 : 1;
+        double ty = Math.Abs(nx) < 0.9 && Math.Abs(ny) < 0.9 ? 0 : 0;
+        double tz = Math.Abs(nx) < 0.9 && Math.Abs(ny) < 0.9 ? 1 : 0;
+
+        double ux = ty * nz - tz * ny;
+        double uy = tz * nx - tx * nz;
+        double uz = tx * ny - ty * nx;
+        var ulen = Math.Sqrt(ux * ux + uy * uy + uz * uz);
+        ux /= ulen; uy /= ulen; uz /= ulen;
+
+        double vx = ny * uz - nz * uy;
+        double vy = nz * ux - nx * uz;
+        double vz = nx * uy - ny * ux;
+
+        var matrix = new Matrix3x3
+        {
+            Xx = ux, Xy = uy, Xz = uz,
+            Yx = vx, Yy = vy, Yz = vz,
+            Zx = nx, Zy = ny, Zz = nz
+        };
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var plane = part.Datums.CreateFixedDatumPlane(new Point3d(origin[0], origin[1], origin[2]), matrix);
+            var planeHandle = Registry.Register(plane, "DatumPlane", ownerObjectId: partHandle.ObjectId);
+
+            var feat = plane.Feature;
+            var featHandle = feat != null ? Registry.Register(feat, "Feature", ownerObjectId: partHandle.ObjectId) : null;
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["plane_ref"] = FormatHandle(planeHandle, plane),
+                ["feature_ref"] = featHandle != null ? FormatHandle(featHandle, feat!) : new Dictionary<string, object>(),
+                ["name"] = feat != null ? feat.GetFeatureName() : (plane.Name ?? "DatumPlane"),
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartDatumCreateAxis(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
+        var direction = GetDoubleArray(payload, "direction", 3, new[] { 0.0, 0.0, 1.0 });
+        if (direction[0] == 0 && direction[1] == 0 && direction[2] == 0) direction[2] = 1.0;
+
+        var start = new Point3d(origin[0], origin[1], origin[2]);
+        var end = new Point3d(origin[0] + direction[0] * 100.0, origin[1] + direction[1] * 100.0, origin[2] + direction[2] * 100.0);
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var axis = part.Datums.CreateFixedDatumAxis(start, end);
+            var axisHandle = Registry.Register(axis, "DatumAxis", ownerObjectId: partHandle.ObjectId);
+
+            var feat = axis.Feature;
+            var featHandle = feat != null ? Registry.Register(feat, "Feature", ownerObjectId: partHandle.ObjectId) : null;
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["axis_ref"] = FormatHandle(axisHandle, axis),
+                ["feature_ref"] = featHandle != null ? FormatHandle(featHandle, feat!) : new Dictionary<string, object>(),
+                ["name"] = feat != null ? feat.GetFeatureName() : (axis.Name ?? "DatumAxis"),
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartDatumCreateCsys(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
+        var xDir = GetDoubleArray(payload, "x_direction", 3, new[] { 1.0, 0.0, 0.0 });
+        var yDir = GetDoubleArray(payload, "y_direction", 3, new[] { 0.0, 1.0, 0.0 });
+        if (xDir[0] == 0 && xDir[1] == 0 && xDir[2] == 0) xDir[0] = 1.0;
+        if (yDir[0] == 0 && yDir[1] == 0 && yDir[2] == 0) yDir[1] = 1.0;
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var originPt = new Point3d(origin[0], origin[1], origin[2]);
+            var xVec = new Vector3d(xDir[0], xDir[1], xDir[2]);
+            var yVec = new Vector3d(yDir[0], yDir[1], yDir[2]);
+
+            using (var scope = new BuilderScope<NXOpen.Features.DatumCsysBuilder>(
+                part.Features.CreateDatumCsysBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                var csys = part.CoordinateSystems.CreateCoordinateSystem(originPt, xVec, yVec);
+                builder.Csys = csys;
+                var feature = scope.CommitOnce(b => (NXOpen.Features.DatumCsys)b.CommitFeature());
+
+                var csysHandle = Registry.Register(csys, "CoordinateSystem", ownerObjectId: partHandle.ObjectId);
+                var featHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["csys_ref"] = FormatHandle(csysHandle, csys),
+                    ["feature_ref"] = FormatHandle(featHandle, feature),
+                    ["name"] = feature.GetFeatureName(),
+                });
+            }
+        }, token));
+    }
 
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
