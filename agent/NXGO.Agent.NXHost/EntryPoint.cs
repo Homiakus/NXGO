@@ -33,6 +33,7 @@ public static partial class EntryPoint
     {
         "nx.ping", "session.info", "part.new", "part.open", "part.save", "part.close",
         "part.query_summary", "part.get_attributes", "part.set_attributes", "part.bulk_metadata",
+        "part.query_load_status",
         "object.release", "feature.create_block", "feature.create_cylinder",
         "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
@@ -284,6 +285,8 @@ public static partial class EntryPoint
                     return StartPartSetAttributes(executor, requestId, requestPayload, token);
                 case "part.bulk_metadata":
                     return StartPartBulkMetadata(session, executor, requestId, requestPayload, token);
+                case "part.query_load_status":
+                    return StartPartLoadStatus(executor, requestId, requestPayload, token);
                 case "object.release":
                     return StartObjectRelease(executor, requestId, requestPayload, token);
                 case "feature.create_block":
@@ -721,6 +724,58 @@ public static partial class EntryPoint
             return FormatResponse(requestId, new Dictionary<string, object>
             {
                 ["entries"] = entries
+            });
+        }, token));
+    }
+
+    private static Task<byte[]> StartPartLoadStatus(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var handle = RequireHandle(payload, "part_ref", "Part");
+
+        return MapRead(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(handle, "Part");
+
+            var isFullyLoaded = false;
+            var isModified = false;
+            var isReadOnly = false;
+            var hasWriteAccess = true;
+            var loadState = string.Empty;
+
+            try { isFullyLoaded = part.IsFullyLoaded; } catch { }
+            try { isModified = part.IsModified; } catch { }
+            try { isReadOnly = part.IsReadOnly; } catch { }
+            try { hasWriteAccess = part.HasWriteAccess; } catch { }
+            try { loadState = part.PartLoadState.ToString(); } catch { }
+
+            var unloadedDeps = new List<Dictionary<string, object>>();
+            try
+            {
+                var pls = part.LoadFeatureDataForSelection();
+                if (pls != null)
+                {
+                    for (int i = 0; i < pls.NumberUnloadedParts; i++)
+                    {
+                        unloadedDeps.Add(new Dictionary<string, object>
+                        {
+                            ["part_name"] = pls.GetPartName(i),
+                            ["status_code"] = pls.GetStatus(i),
+                            ["status_description"] = pls.GetStatusDescription(i) ?? string.Empty,
+                        });
+                    }
+                }
+            }
+            catch { }
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["is_fully_loaded"] = isFullyLoaded,
+                ["is_modified"] = isModified,
+                ["is_read_only"] = isReadOnly,
+                ["has_write_access"] = hasWriteAccess,
+                ["load_state"] = loadState,
+                ["unloaded_dependencies"] = unloadedDeps,
             });
         }, token));
     }

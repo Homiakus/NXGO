@@ -328,6 +328,25 @@ type PartBulkMetadataResponse struct {
 	Entries []PartMetadataEntry `json:"entries"`
 }
 
+type PartUnloadedDependency struct {
+	PartName          string `json:"part_name"`
+	StatusCode        int    `json:"status_code"`
+	StatusDescription string `json:"status_description,omitempty"`
+}
+
+type PartLoadStatusRequest struct {
+	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`
+}
+
+type PartLoadStatusResponse struct {
+	IsFullyLoaded        bool                     `json:"is_fully_loaded"`
+	IsModified           bool                     `json:"is_modified"`
+	IsReadOnly           bool                     `json:"is_read_only"`
+	HasWriteAccess       bool                     `json:"has_write_access"`
+	LoadState            string                   `json:"load_state"`
+	UnloadedDependencies []PartUnloadedDependency `json:"unloaded_dependencies,omitempty"`
+}
+
 // Object registry operation payloads (Phase 5)
 
 type ObjectReleaseRequest struct {

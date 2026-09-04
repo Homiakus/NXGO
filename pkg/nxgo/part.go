@@ -313,3 +313,29 @@ func (s *Session) BulkMetadata(ctx context.Context, parts ...*Part) ([]protocol.
 	}
 	return res.Entries, nil
 }
+
+func (p *Part) LoadStatus(ctx context.Context) (*protocol.PartLoadStatusResponse, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	reqData, err := protocol.EncodePayload(protocol.PartLoadStatusRequest{
+		PartRef: &p.Ref,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("part.query_load_status"),
+		Op:        "part.query_load_status",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+
+	return protocol.DecodePayload[protocol.PartLoadStatusResponse](resp.Payload)
+}

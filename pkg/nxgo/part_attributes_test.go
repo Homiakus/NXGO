@@ -76,6 +76,19 @@ func TestPartBatchAttributesAndBulkMetadata(t *testing.T) {
 					},
 				}
 				respPayload, _ = protocol.EncodePayload(resp)
+
+			case "part.query_load_status":
+				resp := protocol.PartLoadStatusResponse{
+					IsFullyLoaded:  true,
+					IsModified:     false,
+					IsReadOnly:     false,
+					HasWriteAccess: true,
+					LoadState:      "FullyLoaded",
+					UnloadedDependencies: []protocol.PartUnloadedDependency{
+						{PartName: "sub_bracket.prt", StatusCode: 0, StatusDescription: "Loaded"},
+					},
+				}
+				respPayload, _ = protocol.EncodePayload(resp)
 			}
 
 			respEnv := protocol.ResponseEnvelope{
@@ -148,5 +161,14 @@ func TestPartBatchAttributesAndBulkMetadata(t *testing.T) {
 	}
 	if len(bulk) != 1 || bulk[0].FullPath != "C:\\CAD\\bracket.prt" {
 		t.Fatalf("unexpected bulk metadata response: %+v", bulk)
+	}
+
+	// 5. Test Part.LoadStatus()
+	loadStat, err := part.LoadStatus(ctx)
+	if err != nil {
+		t.Fatalf("LoadStatus failed: %v", err)
+	}
+	if !loadStat.IsFullyLoaded || loadStat.LoadState != "FullyLoaded" || len(loadStat.UnloadedDependencies) != 1 {
+		t.Fatalf("unexpected load status: %+v", loadStat)
 	}
 }
