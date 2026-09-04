@@ -157,6 +157,25 @@ type Profile struct {
 	LoopCount int
 }
 
+type ExtrudeParams struct {
+	ProfileRef    protocol.ObjectHandleWire
+	Direction     Vector3D // defaults to [0, 0, 1]
+	StartLimit    float64  // default 0.0
+	EndLimit      float64  // extrude distance / height
+	BooleanOp     string   // "create", "unite", "subtract", "intersect"
+	TargetBodyRef *protocol.ObjectHandleWire
+}
+
+type RevolveParams struct {
+	ProfileRef    protocol.ObjectHandleWire
+	AxisOrigin    Point3D
+	AxisDirection Vector3D // defaults to [0, 0, 1]
+	StartAngle    float64  // degrees, default 0.0
+	EndAngle      float64  // degrees, e.g. 360.0
+	BooleanOp     string   // "create", "unite", "subtract", "intersect"
+	TargetBodyRef *protocol.ObjectHandleWire
+}
+
 
 
 type MassProperties struct {
@@ -792,6 +811,117 @@ func (s *Sketch) CreateProfile(ctx context.Context, params ProfileParams) (*Prof
 		SketchRef: s.Ref,
 		Name:      payload.Name,
 		LoopCount: payload.LoopCount,
+	}, nil
+}
+
+func (p *Part) Extrude(ctx context.Context, params ExtrudeParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if err := p.session.validateObjectHandle(&params.ProfileRef, "Profile", "Section"); err != nil {
+		return nil, err
+	}
+	if err := validateCreateFeatureOptions(p.session, params.BooleanOp, params.TargetBodyRef); err != nil {
+		return nil, err
+	}
+	if params.EndLimit <= params.StartLimit {
+		return nil, errors.New("extrude end_limit must be greater than start_limit")
+	}
+
+	dir := params.Direction
+	if dir[0] == 0 && dir[1] == 0 && dir[2] == 0 {
+		dir = Vector3D{0, 0, 1}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreateExtrudeRequest{
+		PartRef:       &p.Ref,
+		ProfileRef:    &params.ProfileRef,
+		Direction:     dir,
+		StartLimit:    params.StartLimit,
+		EndLimit:      params.EndLimit,
+		BooleanOp:     params.BooleanOp,
+		TargetBodyRef: params.TargetBodyRef,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_extrude"),
+		Op:        "feature.create_extrude",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.FeatureCreateExtrudeResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Feature{
+		session: p.session,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
+	}, nil
+}
+
+func (p *Part) Revolve(ctx context.Context, params RevolveParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if err := p.session.validateObjectHandle(&params.ProfileRef, "Profile", "Section"); err != nil {
+		return nil, err
+	}
+	if err := validateCreateFeatureOptions(p.session, params.BooleanOp, params.TargetBodyRef); err != nil {
+		return nil, err
+	}
+	if params.EndAngle <= params.StartAngle {
+		return nil, errors.New("revolve end_angle must be greater than start_angle")
+	}
+
+	axisDir := params.AxisDirection
+	if axisDir[0] == 0 && axisDir[1] == 0 && axisDir[2] == 0 {
+		axisDir = Vector3D{0, 0, 1}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreateRevolveRequest{
+		PartRef:       &p.Ref,
+		ProfileRef:    &params.ProfileRef,
+		AxisOrigin:    params.AxisOrigin,
+		AxisDirection: axisDir,
+		StartAngle:    params.StartAngle,
+		EndAngle:      params.EndAngle,
+		BooleanOp:     params.BooleanOp,
+		TargetBodyRef: params.TargetBodyRef,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_revolve"),
+		Op:        "feature.create_revolve",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.FeatureCreateRevolveResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Feature{
+		session: p.session,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
 	}, nil
 }
 

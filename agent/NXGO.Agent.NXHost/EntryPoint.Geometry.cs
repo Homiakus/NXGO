@@ -923,6 +923,221 @@ public static partial class EntryPoint
         }, token));
     }
 
+    private static Task<byte[]> StartCreateExtrude(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var startLimit = GetDouble(payload, "start_limit", 0.0);
+        var endLimit = GetDouble(payload, "end_limit", 25.0);
+
+        ObjectHandleToken? profileHandle = null;
+        if (payload.TryGetValue("profile_ref", out var profRaw) && profRaw is Dictionary<string, object> profDict && profDict.Count > 0)
+        {
+            profileHandle = RequireHandle(new Dictionary<string, object> { ["prof"] = profDict }, "prof", "Profile");
+        }
+        ObjectHandleToken? sketchHandle = null;
+        if (payload.TryGetValue("sketch_ref", out var skRaw) && skRaw is Dictionary<string, object> skDict && skDict.Count > 0)
+        {
+            sketchHandle = RequireHandle(new Dictionary<string, object> { ["sketch"] = skDict }, "sketch", "Sketch");
+        }
+        if (profileHandle == null && sketchHandle == null)
+        {
+            throw new ArgumentException("either profile_ref or sketch_ref is required for extrude");
+        }
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            NXOpen.Section section;
+            if (profileHandle != null)
+            {
+                section = (NXOpen.Section)Registry.Resolve(profileHandle, "Profile");
+            }
+            else
+            {
+                var sketch = (NXOpen.Sketch)Registry.Resolve(sketchHandle!, "Sketch");
+                section = part.Sections.CreateSection(0.024, 0.024, 0.5);
+                if (sketch.Feature != null)
+                {
+                    var rule = part.ScRuleFactory.CreateRuleCurveFeature(new NXOpen.Features.Feature[] { sketch.Feature });
+                    section.AddToSection(new NXOpen.SelectionIntentRule[] { rule }, null!, null!, null!, new Point3d(0, 0, 0), NXOpen.Section.Mode.Create, false);
+                }
+                else
+                {
+                    var allGeom = sketch.GetAllGeometry();
+                    var curves = new List<NXOpen.Curve>();
+                    if (allGeom != null)
+                    {
+                        foreach (var g in allGeom)
+                        {
+                            if (g is NXOpen.Curve c) curves.Add(c);
+                        }
+                    }
+                    if (curves.Count > 0)
+                    {
+                        var dumbRule = part.ScRuleFactory.CreateRuleCurveDumb(curves.ToArray());
+                        section.AddToSection(new NXOpen.SelectionIntentRule[] { dumbRule }, null!, null!, null!, new Point3d(0, 0, 0), NXOpen.Section.Mode.Create, false);
+                    }
+                }
+            }
+
+            using (var scope = new BuilderScope<NXOpen.Features.ExtrudeBuilder>(
+                part.Features.CreateExtrudeBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.Section = section;
+
+                if (payload.TryGetValue("direction", out var dirRaw) && dirRaw != null)
+                {
+                    var dir = GetDoubleArray(payload, "direction", 3, new[] { 0.0, 0.0, 1.0 });
+                    if (dir[0] != 0 || dir[1] != 0 || dir[2] != 0)
+                    {
+                        builder.Direction = part.Directions.CreateDirection(new Point3d(0, 0, 0), new Vector3d(dir[0], dir[1], dir[2]), NXOpen.SmartObject.UpdateOption.WithinModeling);
+                    }
+                }
+
+                builder.Limits.StartExtend.Value.RightHandSide = startLimit.ToString("G", CultureInfo.InvariantCulture);
+                builder.Limits.EndExtend.Value.RightHandSide = endLimit.ToString("G", CultureInfo.InvariantCulture);
+
+                ApplyBooleanOption(part, builder.BooleanOperation, payload);
+
+                var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
+                var bodies = feature.GetBodies();
+                if (bodies == null || bodies.Length == 0) throw new InvalidOperationException("extrude feature commit produced no body");
+                var body = bodies[0];
+
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+                var bodyHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["feature_ref"] = FormatHandle(featureHandle, feature),
+                    ["body_ref"] = FormatHandle(bodyHandle, body),
+                    ["feature_name"] = feature.GetFeatureName(),
+                    ["feature_type"] = feature.FeatureType,
+                });
+            }
+        }, token));
+    }
+
+    private static Task<byte[]> StartCreateRevolve(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var startAngle = GetDouble(payload, "start_angle", 0.0);
+        var endAngle = GetDouble(payload, "end_angle", 360.0);
+
+        ObjectHandleToken? profileHandle = null;
+        if (payload.TryGetValue("profile_ref", out var profRaw) && profRaw is Dictionary<string, object> profDict && profDict.Count > 0)
+        {
+            profileHandle = RequireHandle(new Dictionary<string, object> { ["prof"] = profDict }, "prof", "Profile");
+        }
+        ObjectHandleToken? sketchHandle = null;
+        if (payload.TryGetValue("sketch_ref", out var skRaw) && skRaw is Dictionary<string, object> skDict && skDict.Count > 0)
+        {
+            sketchHandle = RequireHandle(new Dictionary<string, object> { ["sketch"] = skDict }, "sketch", "Sketch");
+        }
+        if (profileHandle == null && sketchHandle == null)
+        {
+            throw new ArgumentException("either profile_ref or sketch_ref is required for revolve");
+        }
+
+        ObjectHandleToken? axisHandle = null;
+        if (payload.TryGetValue("axis_ref", out var axRaw) && axRaw is Dictionary<string, object> axDict && axDict.Count > 0)
+        {
+            axisHandle = RequireHandle(new Dictionary<string, object> { ["axis"] = axDict }, "axis", "DatumAxis");
+        }
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            NXOpen.Section section;
+            if (profileHandle != null)
+            {
+                section = (NXOpen.Section)Registry.Resolve(profileHandle, "Profile");
+            }
+            else
+            {
+                var sketch = (NXOpen.Sketch)Registry.Resolve(sketchHandle!, "Sketch");
+                section = part.Sections.CreateSection(0.024, 0.024, 0.5);
+                if (sketch.Feature != null)
+                {
+                    var rule = part.ScRuleFactory.CreateRuleCurveFeature(new NXOpen.Features.Feature[] { sketch.Feature });
+                    section.AddToSection(new NXOpen.SelectionIntentRule[] { rule }, null!, null!, null!, new Point3d(0, 0, 0), NXOpen.Section.Mode.Create, false);
+                }
+                else
+                {
+                    var allGeom = sketch.GetAllGeometry();
+                    var curves = new List<NXOpen.Curve>();
+                    if (allGeom != null)
+                    {
+                        foreach (var g in allGeom)
+                        {
+                            if (g is NXOpen.Curve c) curves.Add(c);
+                        }
+                    }
+                    if (curves.Count > 0)
+                    {
+                        var dumbRule = part.ScRuleFactory.CreateRuleCurveDumb(curves.ToArray());
+                        section.AddToSection(new NXOpen.SelectionIntentRule[] { dumbRule }, null!, null!, null!, new Point3d(0, 0, 0), NXOpen.Section.Mode.Create, false);
+                    }
+                }
+            }
+
+            using (var scope = new BuilderScope<NXOpen.Features.RevolveBuilder>(
+                part.Features.CreateRevolveBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.Section = section;
+
+                if (axisHandle != null)
+                {
+                    var datumAxis = (DatumAxis)Registry.Resolve(axisHandle, "DatumAxis");
+                    var startPt = datumAxis.Origin;
+                    var dirVec = datumAxis.Direction;
+                    builder.Axis = part.Axes.CreateAxis(startPt, dirVec, NXOpen.SmartObject.UpdateOption.WithinModeling);
+                }
+                else
+                {
+                    var origin = GetDoubleArray(payload, "axis_origin", 3, new[] { 0.0, 0.0, 0.0 });
+                    var dir = GetDoubleArray(payload, "axis_direction", 3, new[] { 0.0, 0.0, 1.0 });
+                    if (dir[0] == 0 && dir[1] == 0 && dir[2] == 0) dir[2] = 1.0;
+                    builder.Axis = part.Axes.CreateAxis(
+                        new Point3d(origin[0], origin[1], origin[2]),
+                        new Vector3d(dir[0], dir[1], dir[2]),
+                        NXOpen.SmartObject.UpdateOption.WithinModeling);
+                }
+
+                builder.Limits.StartExtend.Value.RightHandSide = startAngle.ToString("G", CultureInfo.InvariantCulture);
+                builder.Limits.EndExtend.Value.RightHandSide = endAngle.ToString("G", CultureInfo.InvariantCulture);
+
+                ApplyBooleanOption(part, builder.BooleanOperation, payload);
+
+                var feature = scope.CommitOnce(b => (NXOpen.Features.BodyFeature)b.CommitFeature());
+                var bodies = feature.GetBodies();
+                if (bodies == null || bodies.Length == 0) throw new InvalidOperationException("revolve feature commit produced no body");
+                var body = bodies[0];
+
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+                var bodyHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["feature_ref"] = FormatHandle(featureHandle, feature),
+                    ["body_ref"] = FormatHandle(bodyHandle, body),
+                    ["feature_name"] = feature.GetFeatureName(),
+                    ["feature_type"] = feature.FeatureType,
+                });
+            }
+        }, token));
+    }
+
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
         if (!source.TryGetValue(key, out var value) || value == null) return defaultValue;
@@ -971,4 +1186,5 @@ public static partial class EntryPoint
         };
     }
 }
+
 

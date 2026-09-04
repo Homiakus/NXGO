@@ -553,6 +553,42 @@ type ProfileCreateResponse struct {
 	LoopCount  int              `json:"loop_count"`
 }
 
+type FeatureCreateExtrudeRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	ProfileRef    *ObjectHandleWire `json:"profile_ref"`
+	Direction     [3]float64        `json:"direction,omitempty"`
+	StartLimit    float64           `json:"start_limit,omitempty"`
+	EndLimit      float64           `json:"end_limit"`
+	BooleanOp     string            `json:"boolean_op,omitempty"`
+	TargetBodyRef *ObjectHandleWire `json:"target_body_ref,omitempty"`
+}
+
+type FeatureCreateExtrudeResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref,omitempty"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
+
+type FeatureCreateRevolveRequest struct {
+	PartRef       *ObjectHandleWire `json:"part_ref,omitempty"`
+	ProfileRef    *ObjectHandleWire `json:"profile_ref"`
+	AxisOrigin    [3]float64        `json:"axis_origin,omitempty"`
+	AxisDirection [3]float64        `json:"axis_direction,omitempty"`
+	AxisRef       *ObjectHandleWire `json:"axis_ref,omitempty"`
+	StartAngle    float64           `json:"start_angle,omitempty"`
+	EndAngle      float64           `json:"end_angle"`
+	BooleanOp     string            `json:"boolean_op,omitempty"`
+	TargetBodyRef *ObjectHandleWire `json:"target_body_ref,omitempty"`
+}
+
+type FeatureCreateRevolveResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref,omitempty"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
+
 
 
 
@@ -707,3 +743,4 @@ type DraftingSheetInfoWire struct {
 type DraftingQuerySheetsResponse struct {
 	Sheets []DraftingSheetInfoWire `json:"sheets"`
 }
+
