@@ -7,18 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NXGO.Agent.Core;
 using NXOpen;
-
-namespace NXGO.Agent.NXHost;
-
-using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using NXGO.Agent.Core;
-using NXOpen;
+using NXOpen.UF;
 
 namespace NXGO.Agent.NXHost;
 
@@ -408,6 +397,126 @@ public static partial class EntryPoint
             });
         }, token));
     }
+
+    private static Task<byte[]> StartCreateHole(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var targetHandle = RequireHandle(payload, "target_body_ref", "Body");
+        ObjectHandleToken? faceHandle = null;
+        if (payload.TryGetValue("face_ref", out var rawFace) && rawFace is Dictionary<string, object> faceDict && faceDict.Count > 0)
+        {
+            faceHandle = ParseHandle(faceDict);
+        }
+
+        var origin = GetDoubleArray(payload, "origin", 3, new[] { 0.0, 0.0, 0.0 });
+        var direction = GetDoubleArray(payload, "direction", 3, new[] { 0.0, 0.0, -1.0 });
+        if (direction[0] == 0 && direction[1] == 0 && direction[2] == 0) direction[2] = -1.0;
+
+        var diameter = GetDouble(payload, "diameter", 10.0);
+        var depth = GetDouble(payload, "depth", 25.0);
+        var tipAngle = GetDouble(payload, "tip_angle", 118.0);
+        var throughBody = GetBool(payload, "through_body", false);
+        var holeType = GetString(payload, "hole_type", "simple").Trim().ToLowerInvariant();
+
+        var cbDia = GetDouble(payload, "counterbore_diameter", diameter * 1.5);
+        var cbDepth = GetDouble(payload, "counterbore_depth", 5.0);
+        var csDia = GetDouble(payload, "countersink_diameter", diameter * 1.5);
+        var csAngle = GetDouble(payload, "countersink_angle", 90.0);
+
+        if (diameter <= 0) throw new ArgumentException("hole diameter must be positive");
+        if (!throughBody && depth <= 0) throw new ArgumentException("hole depth must be positive for blind hole");
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            RequireMatchingPartUnits(payload, part);
+            var targetBody = (Body)Registry.Resolve(targetHandle, "Body");
+            Journal.MarkStarted(requestId);
+
+            var uf = NXOpen.UF.UFSession.GetUFSession();
+            Tag placementFace = Tag.Null;
+            Tag throughFace = Tag.Null;
+
+            if (faceHandle != null)
+            {
+                var faceObj = (Face)Registry.Resolve(faceHandle, "Face");
+                placementFace = faceObj.Tag;
+            }
+            else
+            {
+                var faces = targetBody.GetFaces();
+                if (faces != null && faces.Length > 0)
+                {
+                    try
+                    {
+                        uf.Modl.TraceARay(1, new[] { targetBody.Tag }, origin, direction, null!, 1, out int numHits, out var hitList);
+                        if (numHits > 0 && hitList != null && hitList.Length > 0)
+                        {
+                            placementFace = hitList[0].hit_face;
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback if ray trace is unavailable in current mode
+                    }
+
+                    if (placementFace == Tag.Null)
+                    {
+                        placementFace = faces[0].Tag;
+                    }
+                }
+            }
+
+            if (placementFace == Tag.Null)
+            {
+                throw new InvalidOperationException("target body has no faces available for hole placement");
+            }
+
+            var diaStr = diameter.ToString("G", CultureInfo.InvariantCulture);
+            var depthStr = (throughBody ? Math.Max(depth, 10000.0) : depth).ToString("G", CultureInfo.InvariantCulture);
+            var tipAngleStr = tipAngle.ToString("G", CultureInfo.InvariantCulture);
+            Tag featureTag;
+
+            switch (holeType)
+            {
+                case "counterbore":
+                    var cbDiaStr = cbDia.ToString("G", CultureInfo.InvariantCulture);
+                    var cbDepthStr = cbDepth.ToString("G", CultureInfo.InvariantCulture);
+                    uf.Modl.CreateCBoreHole(origin, direction, diaStr, depthStr, cbDiaStr, cbDepthStr, tipAngleStr, placementFace, throughFace, out featureTag);
+                    break;
+                case "countersink":
+                    var csDiaStr = csDia.ToString("G", CultureInfo.InvariantCulture);
+                    var csAngleStr = csAngle.ToString("G", CultureInfo.InvariantCulture);
+                    uf.Modl.CreateCSunkHole(origin, direction, diaStr, depthStr, csDiaStr, csAngleStr, tipAngleStr, placementFace, throughFace, out featureTag);
+                    break;
+                case "simple":
+                default:
+                    uf.Modl.CreateSimpleHole(origin, direction, diaStr, depthStr, tipAngleStr, placementFace, throughFace, out featureTag);
+                    break;
+            }
+
+            if (featureTag == Tag.Null)
+            {
+                throw new InvalidOperationException("NX UFModl hole creation failed to return a valid feature tag");
+            }
+
+            var feature = (NXOpen.Features.Feature)NXOpen.Utilities.NXObjectManager.Get(featureTag);
+            var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+            var bodies = feature.GetBodies();
+            var body = bodies != null && bodies.Length > 0 ? bodies[0] : targetBody;
+            var bodyHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+
+            return FormatResponse(requestId, new Dictionary<string, object>
+            {
+                ["feature_ref"] = FormatHandle(featureHandle, feature),
+                ["body_ref"] = FormatHandle(bodyHandle, body),
+                ["feature_name"] = feature.GetFeatureName(),
+                ["feature_type"] = feature.FeatureType,
+            });
+        }, token));
+    }
+
 
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {

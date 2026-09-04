@@ -419,6 +419,32 @@ type FeatureBooleanResponse struct {
 	FeatureType string           `json:"feature_type"`
 }
 
+type FeatureCreateHoleRequest struct {
+	PartRef             *ObjectHandleWire `json:"part_ref,omitempty"`
+	TargetBodyRef       *ObjectHandleWire `json:"target_body_ref"`
+	FaceRef             *ObjectHandleWire `json:"face_ref,omitempty"`
+	Units               string            `json:"units,omitempty"`
+	HoleType            string            `json:"hole_type,omitempty"` // "simple", "counterbore", "countersink"
+	Origin              [3]float64        `json:"origin"`
+	Direction           [3]float64        `json:"direction"`
+	Diameter            float64           `json:"diameter"`
+	Depth               float64           `json:"depth"`
+	TipAngle            float64           `json:"tip_angle,omitempty"`
+	ThroughBody         bool              `json:"through_body,omitempty"`
+	CounterboreDiameter float64           `json:"counterbore_diameter,omitempty"`
+	CounterboreDepth    float64           `json:"counterbore_depth,omitempty"`
+	CountersinkDiameter float64           `json:"countersink_diameter,omitempty"`
+	CountersinkAngle    float64           `json:"countersink_angle,omitempty"`
+}
+
+type FeatureCreateHoleResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
+
+
 type GeometryQueryMassPropertiesRequest struct {
 	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`
 	PartRef *ObjectHandleWire `json:"part_ref,omitempty"`

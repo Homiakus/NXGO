@@ -34,6 +34,30 @@ type CylinderParams struct {
 	TargetBodyRef *protocol.ObjectHandleWire
 }
 
+type HoleType string
+
+const (
+	HoleTypeSimple      HoleType = "simple"
+	HoleTypeCounterbore HoleType = "counterbore"
+	HoleTypeCountersink HoleType = "countersink"
+)
+
+type HoleParams struct {
+	Type                HoleType
+	TargetBodyRef       protocol.ObjectHandleWire
+	FaceRef             *protocol.ObjectHandleWire
+	Origin              Point3D
+	Direction           Vector3D
+	Diameter            float64
+	Depth               float64
+	TipAngle            float64
+	ThroughBody         bool
+	CounterboreDiameter float64
+	CounterboreDepth    float64
+	CountersinkDiameter float64
+	CountersinkAngle    float64
+}
+
 type MassProperties struct {
 	Units     string
 	Volume    float64
@@ -230,6 +254,107 @@ func (p *Part) Boolean(ctx context.Context, params BooleanParams) (*Feature, err
 	}
 
 	payload, err := protocol.DecodePayload[protocol.FeatureBooleanResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Feature{
+		session: p.session,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
+	}, nil
+}
+
+func (p *Part) CreateHole(ctx context.Context, params HoleParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if err := p.session.validateObjectHandle(&params.TargetBodyRef, "Body"); err != nil {
+		return nil, err
+	}
+	if params.FaceRef != nil {
+		if err := p.session.validateObjectHandle(params.FaceRef, "Face"); err != nil {
+			return nil, err
+		}
+	}
+	if params.Diameter <= 0 {
+		return nil, errors.New("hole diameter must be positive")
+	}
+	if !params.ThroughBody && params.Depth <= 0 {
+		return nil, errors.New("hole depth must be positive for blind hole")
+	}
+
+	hType := strings.TrimSpace(strings.ToLower(string(params.Type)))
+	if hType == "" {
+		hType = string(HoleTypeSimple)
+	}
+	switch HoleType(hType) {
+	case HoleTypeSimple:
+		// simple hole
+	case HoleTypeCounterbore:
+		if params.CounterboreDiameter <= params.Diameter {
+			return nil, errors.New("counterbore diameter must be greater than hole diameter")
+		}
+		if params.CounterboreDepth <= 0 {
+			return nil, errors.New("counterbore depth must be positive")
+		}
+	case HoleTypeCountersink:
+		if params.CountersinkDiameter <= params.Diameter {
+			return nil, errors.New("countersink diameter must be greater than hole diameter")
+		}
+		if params.CountersinkAngle <= 0 || params.CountersinkAngle >= 180 {
+			return nil, errors.New("countersink angle must be between 0 and 180 degrees")
+		}
+	default:
+		return nil, fmt.Errorf("%w: unsupported hole type %q (supported: simple, counterbore, countersink)", ErrUnsupportedFeatureOption, params.Type)
+	}
+
+	dir := params.Direction
+	if dir[0] == 0 && dir[1] == 0 && dir[2] == 0 {
+		dir = Vector3D{0, 0, -1}
+	}
+
+	tipAngle := params.TipAngle
+	if tipAngle <= 0 {
+		tipAngle = 118.0
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreateHoleRequest{
+		PartRef:             &p.Ref,
+		TargetBodyRef:       &params.TargetBodyRef,
+		FaceRef:             params.FaceRef,
+		Units:               p.Units,
+		HoleType:            hType,
+		Origin:              params.Origin,
+		Direction:           dir,
+		Diameter:            params.Diameter,
+		Depth:               params.Depth,
+		TipAngle:            tipAngle,
+		ThroughBody:         params.ThroughBody,
+		CounterboreDiameter: params.CounterboreDiameter,
+		CounterboreDepth:    params.CounterboreDepth,
+		CountersinkDiameter: params.CountersinkDiameter,
+		CountersinkAngle:    params.CountersinkAngle,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_hole"),
+		Op:        "feature.create_hole",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+
+	payload, err := protocol.DecodePayload[protocol.FeatureCreateHoleResponse](resp.Payload)
 	if err != nil {
 		return nil, err
 	}

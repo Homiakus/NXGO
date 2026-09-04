@@ -35,6 +35,7 @@ public static partial class EntryPoint
         "part.query_summary", "part.get_attributes", "part.set_attributes", "part.bulk_metadata",
         "part.query_load_status",
         "object.release", "feature.create_block", "feature.create_cylinder", "feature.boolean",
+        "feature.create_hole",
         "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
         "assembly.query_tree", "assembly.query_bom", "assembly.remove_component",
@@ -47,7 +48,7 @@ public static partial class EntryPoint
         ["part.set_attributes"] = MutationOutcomeClass.Transactional,
         ["object.release"] = MutationOutcomeClass.DeterministicIdempotent,
         ["feature.create_block"] = MutationOutcomeClass.Transactional, ["feature.create_cylinder"] = MutationOutcomeClass.Transactional,
-        ["feature.boolean"] = MutationOutcomeClass.Transactional,
+        ["feature.boolean"] = MutationOutcomeClass.Transactional, ["feature.create_hole"] = MutationOutcomeClass.Transactional,
         ["transaction.begin"] = MutationOutcomeClass.Transactional, ["transaction.commit"] = MutationOutcomeClass.Transactional,
         ["transaction.rollback"] = MutationOutcomeClass.Transactional,
         ["assembly.add_component"] = MutationOutcomeClass.Transactional, ["assembly.remove_component"] = MutationOutcomeClass.Transactional,
@@ -296,6 +297,8 @@ public static partial class EntryPoint
                     return StartCreateCylinder(executor, requestId, requestPayload, token);
                 case "feature.boolean":
                     return StartBooleanOperation(executor, requestId, requestPayload, token);
+                case "feature.create_hole":
+                    return StartCreateHole(executor, requestId, requestPayload, token);
                 case "part.query_bodies":
                     return StartQueryBodies(executor, requestId, requestPayload, token);
                 case "geometry.query_mass_properties":
