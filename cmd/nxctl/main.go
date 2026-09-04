@@ -228,14 +228,15 @@ func runCmd(ctx context.Context, name string, args ...string) error {
 func runAPI(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		if len(args) > 0 {
-			fmt.Println("Usage: nxctl api <scan|find|inspect|diff> [options]")
-			fmt.Println("  scan [managed-dir] [--out manifest.json]  Scan NXOpen assemblies")
-			fmt.Println("  find <query> --manifest manifest.json   Search scanned API")
-			fmt.Println("  inspect <type> --manifest manifest.json Inspect a type")
-			fmt.Println("  diff <a.json> <b.json>                  Compare manifests")
+			fmt.Println("Usage: nxctl api <scan|find|inspect|diff|generate> [options]")
+			fmt.Println("  scan [managed-dir] [--out manifest.json]             Scan NXOpen assemblies")
+			fmt.Println("  find <query> --manifest manifest.json                Search scanned API")
+			fmt.Println("  inspect <type> --manifest manifest.json              Inspect a type")
+			fmt.Println("  diff <a.json> <b.json>                               Compare manifests")
+			fmt.Println("  generate --manifest m.json [--out-dir dir] [--pkg p] Generate Go & C# raw bindings")
 			return nil
 		}
-		return errors.New("usage: nxctl api <scan|find|inspect|diff> [options]")
+		return errors.New("usage: nxctl api <scan|find|inspect|diff|generate> [options]")
 	}
 	switch args[0] {
 	case "scan":
@@ -246,8 +247,10 @@ func runAPI(ctx context.Context, args []string) error {
 		return runAPIInspect(args[1:])
 	case "diff":
 		return runAPIDiff(args[1:])
+	case "generate":
+		return runAPIGenerate(args[1:])
 	default:
-		return fmt.Errorf("unknown api subcommand %q (supported: scan, find, inspect, diff)", args[0])
+		return fmt.Errorf("unknown api subcommand %q (supported: scan, find, inspect, diff, generate)", args[0])
 	}
 }
 
@@ -417,6 +420,82 @@ func runAPIDiff(args []string) error {
 			c.TypeName, c.MethodName, c.OldSignature, c.OldSignatureID, c.NewSignature, c.NewSignatureID)
 	}
 
+	return nil
+}
+
+func runAPIGenerate(args []string) error {
+	var manifestPath string
+	var outDir string
+	var pkgName = "nxopenraw"
+	var release string
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--manifest", "-manifest":
+			if i+1 < len(args) { manifestPath = args[i+1]; i++ }
+		case "--out-dir", "-out-dir", "-out", "--out":
+			if i+1 < len(args) { outDir = args[i+1]; i++ }
+		case "--pkg", "-pkg", "--package":
+			if i+1 < len(args) { pkgName = args[i+1]; i++ }
+		case "--release", "-release":
+			if i+1 < len(args) { release = args[i+1]; i++ }
+		}
+	}
+
+	if manifestPath == "" {
+		return errors.New("usage: nxctl api generate --manifest <manifest.json> [--out-dir <dir>] [--pkg <package>] [--release <ver>]")
+	}
+
+	rawBytes, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest %s: %w", manifestPath, err)
+	}
+
+	var manifest apiscanner.APIManifest
+	if err := json.Unmarshal(rawBytes, &manifest); err != nil {
+		return fmt.Errorf("failed to parse manifest JSON: %w", err)
+	}
+
+	opts := apiscanner.GeneratorOptions{
+		PackageName:    pkgName,
+		TargetRelease:  release,
+		GenerateGo:     true,
+		GenerateCSharp: true,
+	}
+
+	out, err := apiscanner.GenerateBindings(&manifest, opts)
+	if err != nil {
+		return fmt.Errorf("code generation failed: %w", err)
+	}
+
+	if outDir != "" {
+		if err := os.MkdirAll(outDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output dir: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "types.go"), []byte(out.GoTypesSource), 0644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "methods.go"), []byte(out.GoMethodsSource), 0644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "registry.go"), []byte(out.GoRegistrySource), 0644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(outDir, "GeneratedDispatcher.cs"), []byte(out.CSharpGlueSource), 0644); err != nil {
+			return err
+		}
+		provBytes, _ := json.MarshalIndent(out.Provenances, "", "  ")
+		if err := os.WriteFile(filepath.Join(outDir, "capabilities.json"), provBytes, 0644); err != nil {
+			return err
+		}
+		fmt.Printf("Successfully generated bindings in %s:\n", outDir)
+	} else {
+		fmt.Printf("Bindings generated (dry-run):\n")
+	}
+
+	fmt.Printf("  Types processed:      %d\n", out.TypesCount)
+	fmt.Printf("  Capabilities tracked: %d\n", out.CapabilitiesCount)
+	fmt.Printf("  Target release:       %s\n", manifest.Release)
 	return nil
 }
 

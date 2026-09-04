@@ -845,10 +845,10 @@ Current state: scanner/search/diff foundation exists; generated raw layer is inc
 - [x] detect changed overloads, not only added/removed names;
 - [x] capture enum members and relevant constants;
 - [x] capture inheritance/interface relationships needed for binding generation;
-- [ ] generate Go raw types/methods;
-- [ ] generate C# dispatch glue;
-- [ ] generate capability IDs from bindings;
-- [ ] trace every generated symbol to source assembly/release/signature ID;
+- [x] generate Go raw types/methods;
+- [x] generate C# dispatch glue;
+- [x] generate capability IDs from bindings;
+- [x] trace every generated symbol to source assembly/release/signature ID;
 - [ ] produce reproducible `2512 -> 2606` compatibility report;
 - [ ] compare scanner results against NX Open Reporter output on a representative subset where tooling is available;
 - [ ] ensure no Siemens binaries are committed or published.
