@@ -881,7 +881,7 @@ A new supported NX build can be scanned and raw bindings regenerated determinist
 - [x] datum/plane/axis basics;
 - [x] sketch/profile strategy;
 - [x] extrude/revolve;
-- [ ] fillet/chamfer;
+- [x] fillet/chamfer;
 - [ ] pattern;
 - [ ] expression/parameter API;
 - [ ] bulk geometry analysis.

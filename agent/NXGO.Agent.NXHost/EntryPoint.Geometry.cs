@@ -1138,6 +1138,181 @@ public static partial class EntryPoint
         }, token));
     }
 
+    private static Task<byte[]> StartCreateFillet(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var radius = GetDouble(payload, "radius", 5.0);
+        if (radius <= 0) throw new ArgumentException("fillet radius must be positive");
+
+        ObjectHandleToken? bodyHandle = null;
+        if (payload.TryGetValue("body_ref", out var bRaw) && bRaw is Dictionary<string, object> bDict && bDict.Count > 0)
+        {
+            bodyHandle = RequireHandle(new Dictionary<string, object> { ["body"] = bDict }, "body", "Body");
+        }
+        var edgeHandles = ExtractHandleList(payload, "edge_refs", "Edge");
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var edges = new List<Edge>();
+            if (edgeHandles.Count > 0)
+            {
+                foreach (var eh in edgeHandles)
+                {
+                    edges.Add((Edge)Registry.Resolve(eh, "Edge"));
+                }
+            }
+            else if (bodyHandle != null)
+            {
+                var body = (Body)Registry.Resolve(bodyHandle, "Body");
+                var bEdges = body.GetEdges();
+                if (bEdges != null) edges.AddRange(bEdges);
+            }
+            else
+            {
+                throw new ArgumentException("either edge_refs or body_ref must be supplied for fillet");
+            }
+
+            if (edges.Count == 0) throw new InvalidOperationException("no edges available for fillet operation");
+
+            using (var scope = new BuilderScope<NXOpen.Features.EdgeBlendBuilder>(
+                part.Features.CreateEdgeBlendBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.Tolerance = 0.001;
+                builder.AllInstancesOption = false;
+                builder.RemoveSelfIntersection = true;
+
+                var collector = part.ScCollectors.CreateCollector();
+                var edgeRule = part.ScRuleFactory.CreateRuleEdgeDumb(edges.ToArray());
+                collector.ReplaceRules(new NXOpen.SelectionIntentRule[] { edgeRule }, false);
+
+                builder.AddChainset(collector, radius.ToString("G", CultureInfo.InvariantCulture));
+
+                var feature = scope.CommitOnce(b => (NXOpen.Features.Feature)b.CommitFeature());
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+
+                var bodies = feature.GetBodies();
+                var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
+                object bodyWire = new Dictionary<string, object>();
+                if (body != null)
+                {
+                    var bHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+                    bodyWire = FormatHandle(bHandle, body);
+                }
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["feature_ref"] = FormatHandle(featureHandle, feature),
+                    ["body_ref"] = bodyWire,
+                    ["feature_name"] = feature.GetFeatureName(),
+                    ["feature_type"] = feature.FeatureType,
+                });
+            }
+        }, token));
+    }
+
+    private static Task<byte[]> StartCreateChamfer(NxExecutor executor, string requestId, Dictionary<string, object> payload, CancellationToken token)
+    {
+        var partHandle = RequireHandle(payload, "part_ref", "Part");
+        var firstOffset = GetDouble(payload, "first_offset", GetDouble(payload, "distance", 5.0));
+        var secondOffset = GetDouble(payload, "second_offset", GetDouble(payload, "second_distance", firstOffset));
+        var angle = GetDouble(payload, "angle", 45.0);
+        var optionStr = GetString(payload, "option", "symmetric").Trim().ToLowerInvariant();
+
+        if (firstOffset <= 0) throw new ArgumentException("chamfer first_offset must be positive");
+
+        ObjectHandleToken? bodyHandle = null;
+        if (payload.TryGetValue("body_ref", out var bRaw) && bRaw is Dictionary<string, object> bDict && bDict.Count > 0)
+        {
+            bodyHandle = RequireHandle(new Dictionary<string, object> { ["body"] = bDict }, "body", "Body");
+        }
+        var edgeHandles = ExtractHandleList(payload, "edge_refs", "Edge");
+
+        return MapMutation(requestId, executor.EnqueueTracked(() =>
+        {
+            Health.RequireReusable();
+            var part = (Part)Registry.Resolve(partHandle, "Part");
+            Journal.MarkStarted(requestId);
+
+            var edges = new List<Edge>();
+            if (edgeHandles.Count > 0)
+            {
+                foreach (var eh in edgeHandles)
+                {
+                    edges.Add((Edge)Registry.Resolve(eh, "Edge"));
+                }
+            }
+            else if (bodyHandle != null)
+            {
+                var body = (Body)Registry.Resolve(bodyHandle, "Body");
+                var bEdges = body.GetEdges();
+                if (bEdges != null) edges.AddRange(bEdges);
+            }
+            else
+            {
+                throw new ArgumentException("either edge_refs or body_ref must be supplied for chamfer");
+            }
+
+            if (edges.Count == 0) throw new InvalidOperationException("no edges available for chamfer operation");
+
+            using (var scope = new BuilderScope<NXOpen.Features.ChamferBuilder>(
+                part.Features.CreateChamferBuilder(null!),
+                b => { try { b.Destroy(); } catch { } }))
+            {
+                var builder = scope.Builder;
+                builder.Tolerance = 0.001;
+
+                switch (optionStr)
+                {
+                    case "two_offsets":
+                        builder.Option = NXOpen.Features.ChamferBuilder.ChamferOption.TwoOffsets;
+                        builder.FirstOffset = firstOffset.ToString("G", CultureInfo.InvariantCulture);
+                        builder.SecondOffset = secondOffset.ToString("G", CultureInfo.InvariantCulture);
+                        break;
+                    case "offset_and_angle":
+                        builder.Option = NXOpen.Features.ChamferBuilder.ChamferOption.OffsetAndAngle;
+                        builder.FirstOffset = firstOffset.ToString("G", CultureInfo.InvariantCulture);
+                        builder.Angle = angle.ToString("G", CultureInfo.InvariantCulture);
+                        break;
+                    default:
+                        builder.Option = NXOpen.Features.ChamferBuilder.ChamferOption.SymmetricOffsets;
+                        builder.FirstOffset = firstOffset.ToString("G", CultureInfo.InvariantCulture);
+                        break;
+                }
+
+                var collector = part.ScCollectors.CreateCollector();
+                var edgeRule = part.ScRuleFactory.CreateRuleEdgeDumb(edges.ToArray());
+                collector.ReplaceRules(new NXOpen.SelectionIntentRule[] { edgeRule }, false);
+                builder.SmartCollector = collector;
+
+                var feature = scope.CommitOnce(b => (NXOpen.Features.Feature)b.CommitFeature());
+                var featureHandle = Registry.Register(feature, "Feature", ownerObjectId: partHandle.ObjectId);
+
+                var bodies = feature.GetBodies();
+                var body = bodies != null && bodies.Length > 0 ? bodies[0] : null;
+                object bodyWire = new Dictionary<string, object>();
+                if (body != null)
+                {
+                    var bHandle = Registry.Register(body, "Body", ownerObjectId: partHandle.ObjectId);
+                    bodyWire = FormatHandle(bHandle, body);
+                }
+
+                return FormatResponse(requestId, new Dictionary<string, object>
+                {
+                    ["feature_ref"] = FormatHandle(featureHandle, feature),
+                    ["body_ref"] = bodyWire,
+                    ["feature_name"] = feature.GetFeatureName(),
+                    ["feature_type"] = feature.FeatureType,
+                });
+            }
+        }, token));
+    }
+
     private static double GetDouble(Dictionary<string, object> source, string key, double defaultValue)
     {
         if (!source.TryGetValue(key, out var value) || value == null) return defaultValue;
@@ -1186,5 +1361,6 @@ public static partial class EntryPoint
         };
     }
 }
+
 
 

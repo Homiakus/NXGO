@@ -589,8 +589,38 @@ type FeatureCreateRevolveResponse struct {
 	FeatureType string           `json:"feature_type"`
 }
 
+type FeatureCreateFilletRequest struct {
+	PartRef    *ObjectHandleWire  `json:"part_ref,omitempty"`
+	BodyRef    *ObjectHandleWire  `json:"body_ref,omitempty"`
+	FeatureRef *ObjectHandleWire  `json:"feature_ref,omitempty"`
+	EdgeRefs   []ObjectHandleWire `json:"edge_refs,omitempty"`
+	Radius     float64            `json:"radius"`
+}
 
+type FeatureCreateFilletResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref,omitempty"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
 
+type FeatureCreateChamferRequest struct {
+	PartRef        *ObjectHandleWire  `json:"part_ref,omitempty"`
+	BodyRef        *ObjectHandleWire  `json:"body_ref,omitempty"`
+	FeatureRef     *ObjectHandleWire  `json:"feature_ref,omitempty"`
+	EdgeRefs       []ObjectHandleWire `json:"edge_refs,omitempty"`
+	Distance       float64            `json:"distance"`
+	SecondDistance float64            `json:"second_distance,omitempty"`
+	Angle          float64            `json:"angle,omitempty"`
+	Option         string             `json:"option,omitempty"`
+}
+
+type FeatureCreateChamferResponse struct {
+	FeatureRef  ObjectHandleWire `json:"feature_ref"`
+	BodyRef     ObjectHandleWire `json:"body_ref,omitempty"`
+	FeatureName string           `json:"feature_name"`
+	FeatureType string           `json:"feature_type"`
+}
 
 type GeometryQueryMassPropertiesRequest struct {
 	BodyRef *ObjectHandleWire `json:"body_ref,omitempty"`

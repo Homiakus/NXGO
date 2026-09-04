@@ -36,7 +36,7 @@ public static partial class EntryPoint
         "part.query_load_status",
         "object.release", "feature.create_block", "feature.create_cylinder", "feature.boolean",
         "feature.create_hole", "datum.create_plane", "datum.create_axis", "datum.create_csys",
-        "sketch.create", "sketch.add_geometry", "sketch.query_status", "sketch.create_profile", "feature.create_extrude", "feature.create_revolve",
+        "sketch.create", "sketch.add_geometry", "sketch.query_status", "sketch.create_profile", "feature.create_extrude", "feature.create_revolve", "feature.create_fillet", "feature.create_chamfer",
         "part.query_bodies", "geometry.query_mass_properties", "geometry.query_bounding_box",
         "transaction.begin", "transaction.commit", "transaction.rollback", "assembly.add_component",
         "assembly.query_tree", "assembly.query_bom", "assembly.remove_component",
@@ -53,7 +53,7 @@ public static partial class EntryPoint
         ["datum.create_plane"] = MutationOutcomeClass.Transactional, ["datum.create_axis"] = MutationOutcomeClass.Transactional,
         ["datum.create_csys"] = MutationOutcomeClass.Transactional,
         ["sketch.create"] = MutationOutcomeClass.Transactional, ["sketch.add_geometry"] = MutationOutcomeClass.Transactional,
-        ["sketch.create_profile"] = MutationOutcomeClass.Transactional, ["feature.create_extrude"] = MutationOutcomeClass.Transactional, ["feature.create_revolve"] = MutationOutcomeClass.Transactional,
+        ["sketch.create_profile"] = MutationOutcomeClass.Transactional, ["feature.create_extrude"] = MutationOutcomeClass.Transactional, ["feature.create_revolve"] = MutationOutcomeClass.Transactional, ["feature.create_fillet"] = MutationOutcomeClass.Transactional, ["feature.create_chamfer"] = MutationOutcomeClass.Transactional,
         ["transaction.begin"] = MutationOutcomeClass.Transactional, ["transaction.commit"] = MutationOutcomeClass.Transactional,
         ["transaction.rollback"] = MutationOutcomeClass.Transactional,
         ["assembly.add_component"] = MutationOutcomeClass.Transactional, ["assembly.remove_component"] = MutationOutcomeClass.Transactional,
@@ -322,6 +322,10 @@ public static partial class EntryPoint
                     return StartCreateExtrude(executor, requestId, requestPayload, token);
                 case "feature.create_revolve":
                     return StartCreateRevolve(executor, requestId, requestPayload, token);
+                case "feature.create_fillet":
+                    return StartCreateFillet(executor, requestId, requestPayload, token);
+                case "feature.create_chamfer":
+                    return StartCreateChamfer(executor, requestId, requestPayload, token);
                 case "part.query_bodies":
                     return StartQueryBodies(executor, requestId, requestPayload, token);
                 case "geometry.query_mass_properties":
@@ -1059,4 +1063,5 @@ public static partial class EntryPoint
         };
     }
 }
+
 

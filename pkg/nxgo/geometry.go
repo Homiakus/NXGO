@@ -176,7 +176,20 @@ type RevolveParams struct {
 	TargetBodyRef *protocol.ObjectHandleWire
 }
 
+type FilletParams struct {
+	BodyRef  *protocol.ObjectHandleWire
+	EdgeRefs []protocol.ObjectHandleWire
+	Radius   float64
+}
 
+type ChamferParams struct {
+	BodyRef        *protocol.ObjectHandleWire
+	EdgeRefs       []protocol.ObjectHandleWire
+	Distance       float64
+	SecondDistance float64 // used for "two_offsets"
+	Angle          float64 // used for "offset_and_angle" in degrees
+	Option         string  // "symmetric", "two_offsets", "offset_and_angle"
+}
 
 type MassProperties struct {
 	Units     string
@@ -204,6 +217,7 @@ type Feature struct {
 
 type Body struct {
 	session   *Session
+	part      *Part
 	Ref       protocol.ObjectHandleWire
 	Name      string
 	SolidType string
@@ -925,6 +939,135 @@ func (p *Part) Revolve(ctx context.Context, params RevolveParams) (*Feature, err
 	}, nil
 }
 
+func (p *Part) CreateFillet(ctx context.Context, params FilletParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if params.Radius <= 0 {
+		return nil, errors.New("fillet radius must be greater than zero")
+	}
+	if params.BodyRef == nil && len(params.EdgeRefs) == 0 {
+		return nil, errors.New("fillet requires either body_ref or edge_refs")
+	}
+	if params.BodyRef != nil {
+		if err := p.session.validateObjectHandle(params.BodyRef, "Body"); err != nil {
+			return nil, err
+		}
+	}
+	for i := range params.EdgeRefs {
+		if err := p.session.validateObjectHandle(&params.EdgeRefs[i], "Edge"); err != nil {
+			return nil, err
+		}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreateFilletRequest{
+		PartRef:  &p.Ref,
+		BodyRef:  params.BodyRef,
+		EdgeRefs: params.EdgeRefs,
+		Radius:   params.Radius,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_fillet"),
+		Op:        "feature.create_fillet",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.FeatureCreateFilletResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Feature{
+		session: p.session,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
+	}, nil
+}
+
+func (p *Part) CreateChamfer(ctx context.Context, params ChamferParams) (*Feature, error) {
+	if err := p.validate(); err != nil {
+		return nil, err
+	}
+	if params.Distance <= 0 {
+		return nil, errors.New("chamfer distance must be greater than zero")
+	}
+	if params.BodyRef == nil && len(params.EdgeRefs) == 0 {
+		return nil, errors.New("chamfer requires either body_ref or edge_refs")
+	}
+	opt := strings.TrimSpace(strings.ToLower(params.Option))
+	if opt == "" {
+		opt = "symmetric"
+	}
+	switch opt {
+	case "symmetric":
+	case "two_offsets":
+		if params.SecondDistance <= 0 {
+			return nil, errors.New("chamfer second_distance must be greater than zero for two_offsets")
+		}
+	case "offset_and_angle":
+		if params.Angle <= 0 || params.Angle >= 90 {
+			return nil, errors.New("chamfer angle must be between 0 and 90 degrees")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported chamfer option: %s", params.Option)
+	}
+
+	if params.BodyRef != nil {
+		if err := p.session.validateObjectHandle(params.BodyRef, "Body"); err != nil {
+			return nil, err
+		}
+	}
+	for i := range params.EdgeRefs {
+		if err := p.session.validateObjectHandle(&params.EdgeRefs[i], "Edge"); err != nil {
+			return nil, err
+		}
+	}
+
+	reqData, err := protocol.EncodePayload(protocol.FeatureCreateChamferRequest{
+		PartRef:        &p.Ref,
+		BodyRef:        params.BodyRef,
+		EdgeRefs:       params.EdgeRefs,
+		Distance:       params.Distance,
+		SecondDistance: params.SecondDistance,
+		Angle:          params.Angle,
+		Option:         opt,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := p.session.client.Call(ctx, &protocol.RequestEnvelope{
+		RequestID: newRequestID("feature.create_chamfer"),
+		Op:        "feature.create_chamfer",
+		Payload:   reqData,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Status != protocol.StatusOK {
+		return nil, formatError(resp.Error)
+	}
+	payload, err := protocol.DecodePayload[protocol.FeatureCreateChamferResponse](resp.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &Feature{
+		session: p.session,
+		Ref:     payload.FeatureRef,
+		BodyRef: payload.BodyRef,
+		Name:    payload.FeatureName,
+		Type:    payload.FeatureType,
+	}, nil
+}
+
 func (p *Part) Bodies(ctx context.Context) ([]*Body, error) {
 	if err := p.validate(); err != nil {
 		return nil, err
@@ -957,6 +1100,7 @@ func (p *Part) Bodies(ctx context.Context) ([]*Body, error) {
 	for _, b := range payload.Bodies {
 		bodies = append(bodies, &Body{
 			session:   p.session,
+			part:      p,
 			Ref:       b.BodyRef,
 			Name:      b.Name,
 			SolidType: b.SolidType,
@@ -1098,6 +1242,33 @@ func (b *Body) BoundingBox(ctx context.Context) (*BoundingBox, error) {
 		Dimensions: payload.Dimensions,
 	}, nil
 }
+
+func (b *Body) CreateFillet(ctx context.Context, radius float64) (*Feature, error) {
+	if err := b.validate(); err != nil {
+		return nil, err
+	}
+	if b.part == nil {
+		return nil, errors.New("body is not attached to an active part")
+	}
+	return b.part.CreateFillet(ctx, FilletParams{
+		BodyRef: &b.Ref,
+		Radius:  radius,
+	})
+}
+
+func (b *Body) CreateChamfer(ctx context.Context, distance float64) (*Feature, error) {
+	if err := b.validate(); err != nil {
+		return nil, err
+	}
+	if b.part == nil {
+		return nil, errors.New("body is not attached to an active part")
+	}
+	return b.part.CreateChamfer(ctx, ChamferParams{
+		BodyRef:  &b.Ref,
+		Distance: distance,
+	})
+}
+
 
 func aggregateMassProperties(items []*MassProperties) *MassProperties {
 	result := &MassProperties{SolidType: "aggregate"}
