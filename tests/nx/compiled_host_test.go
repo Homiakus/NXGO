@@ -235,6 +235,16 @@ func TestRealNXCanonicalCompiledHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("canonical CreateBlock inside commit transaction failed: %v", err)
 	}
+	filletFeat, err := part.CreateFillet(ctx, nxgo.FilletParams{
+		BodyRef: &committedFeature.BodyRef,
+		Radius:  1.0,
+	})
+	if err != nil {
+		t.Fatalf("canonical CreateFillet inside commit transaction failed: %v", err)
+	}
+	if filletFeat.Ref.Generation == 0 {
+		t.Fatal("canonical CreateFillet missing generation")
+	}
 	if err := commitTx.Commit(ctx); err != nil {
 		t.Fatalf("canonical transaction.commit failed: %v", err)
 	}
