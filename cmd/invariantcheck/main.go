@@ -10,6 +10,7 @@ import (
 )
 
 var invariantRE = regexp.MustCompile(`NXGO-INV-[A-Z]+-[0-9]{3}`)
+var architectureRiskRE = regexp.MustCompile(`^RISK-ARCH-[0-9]{3}$`)
 
 type complianceFile struct {
 	Schema  int               `json:"schema"`
@@ -44,11 +45,46 @@ type auditFindingFile struct {
 	} `json:"findings"`
 }
 
+type riskScore struct {
+	Severity   int `json:"severity"`
+	Occurrence int `json:"occurrence"`
+	Detection  int `json:"detection"`
+	RPN        int `json:"rpn"`
+}
+
+type architectureRisk struct {
+	ID                 string    `json:"id"`
+	Title              string    `json:"title"`
+	Category           string    `json:"category"`
+	FailureMode        string    `json:"failure_mode"`
+	Effect             string    `json:"effect"`
+	Causes             []string  `json:"causes"`
+	Controls           []string  `json:"controls"`
+	Inherent           riskScore `json:"inherent"`
+	Residual           riskScore `json:"residual"`
+	Status             string    `json:"status"`
+	Owner              string    `json:"owner"`
+	PlanRefs           []string  `json:"plan_refs"`
+	AuditRefs          []string  `json:"audit_refs,omitempty"`
+	EvidenceRefs       []string  `json:"evidence_refs"`
+	NextActions        []string  `json:"next_actions"`
+	AcceptanceCriteria []string  `json:"acceptance_criteria"`
+	ReviewTriggers     []string  `json:"review_triggers"`
+	DecisionRef        string    `json:"decision_ref,omitempty"`
+	LastReviewed       string    `json:"last_reviewed"`
+}
+
+type architectureRiskFile struct {
+	Schema int                `json:"schema"`
+	Risks  []architectureRisk `json:"risks"`
+}
+
 func main() {
 	required := []string{
 		"docs/ENGINEERING_STANDARD.md",
 		"docs/TESTING_PLAYBOOK.md",
 		"docs/DEFINITION_OF_DONE.md",
+		"docs/ARCHITECTURE_FMEA.md",
 		"docs/invariants/README.md",
 		"docs/invariants/CANONICAL_SEMANTIC_UNITS.md",
 		"docs/invariants/AUDIT_FINDINGS.md",
@@ -57,6 +93,7 @@ func main() {
 		"policy/invariant-compliance.json",
 		"policy/nx-release-evidence.json",
 		"policy/audit-findings.json",
+		"policy/architecture-risks.json",
 		"scripts/nx-real-smoke.ps1",
 		"scripts/build-agent.ps1",
 		"agent/NXGO.Agent.Core/NxExecutor.cs",
@@ -95,13 +132,17 @@ func main() {
 	if err := verifyAuditIndex(); err != nil {
 		fatalf("audit finding index: %v", err)
 	}
+	riskCount, err := verifyArchitectureRisks()
+	if err != nil {
+		fatalf("architecture FMEA: %v", err)
+	}
 	if err := verifyPureGoBoundary(); err != nil {
 		fatalf("pure-Go boundary: %v", err)
 	}
 	if err := verifyAgentSiemensBoundary(); err != nil {
 		fatalf("Agent Siemens boundary: %v", err)
 	}
-	fmt.Printf("invariantcheck: PASS (%d invariant IDs, compliance map valid, Go/Agent dependency boundaries valid)\n", len(catalog))
+	fmt.Printf("invariantcheck: PASS (%d invariant IDs, %d architecture risks, policy maps valid, Go/Agent dependency boundaries valid)\n", len(catalog), riskCount)
 }
 
 func verifyAuditIndex() error {
@@ -129,6 +170,141 @@ func verifyAuditIndex() error {
 		}
 	}
 	return nil
+}
+
+func verifyArchitectureRisks() (int, error) {
+	b, err := os.ReadFile("policy/architecture-risks.json")
+	if err != nil {
+		return 0, err
+	}
+	var doc architectureRiskFile
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return 0, fmt.Errorf("decode JSON: %w", err)
+	}
+	if doc.Schema != 1 {
+		return 0, fmt.Errorf("unsupported schema %d", doc.Schema)
+	}
+	if len(doc.Risks) == 0 {
+		return 0, fmt.Errorf("risk register is empty")
+	}
+
+	planBytes, err := os.ReadFile("MASTER_PLAN.md")
+	if err != nil {
+		return 0, err
+	}
+	plan := string(planBytes)
+	docsBytes, err := os.ReadFile("docs/ARCHITECTURE_FMEA.md")
+	if err != nil {
+		return 0, err
+	}
+	docs := string(docsBytes)
+
+	findingBytes, err := os.ReadFile("policy/audit-findings.json")
+	if err != nil {
+		return 0, err
+	}
+	var findings auditFindingFile
+	if err := json.Unmarshal(findingBytes, &findings); err != nil {
+		return 0, fmt.Errorf("decode audit finding registry: %w", err)
+	}
+	knownFindings := map[string]struct{}{}
+	for _, finding := range findings.Findings {
+		knownFindings[finding.ID] = struct{}{}
+	}
+
+	allowedStatus := map[string]bool{
+		"open":       true,
+		"mitigating": true,
+		"watch":      true,
+		"accepted":   true,
+		"closed":     true,
+	}
+	activeStatus := map[string]bool{"open": true, "mitigating": true, "watch": true}
+	seen := map[string]struct{}{}
+	dateRE := regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+
+	for _, risk := range doc.Risks {
+		if !architectureRiskRE.MatchString(risk.ID) {
+			return 0, fmt.Errorf("invalid risk id %q", risk.ID)
+		}
+		if _, duplicate := seen[risk.ID]; duplicate {
+			return 0, fmt.Errorf("duplicate risk id %q", risk.ID)
+		}
+		seen[risk.ID] = struct{}{}
+		if strings.TrimSpace(risk.Title) == "" || strings.TrimSpace(risk.Category) == "" || strings.TrimSpace(risk.Owner) == "" {
+			return 0, fmt.Errorf("%s requires title, category and owner", risk.ID)
+		}
+		if strings.TrimSpace(risk.FailureMode) == "" || strings.TrimSpace(risk.Effect) == "" {
+			return 0, fmt.Errorf("%s requires failure_mode and effect", risk.ID)
+		}
+		if len(risk.Causes) == 0 || len(risk.Controls) == 0 {
+			return 0, fmt.Errorf("%s requires causes and controls", risk.ID)
+		}
+		if !allowedStatus[risk.Status] {
+			return 0, fmt.Errorf("%s has invalid status %q", risk.ID, risk.Status)
+		}
+		if err := verifyRiskScore(risk.ID+" inherent", risk.Inherent); err != nil {
+			return 0, err
+		}
+		if err := verifyRiskScore(risk.ID+" residual", risk.Residual); err != nil {
+			return 0, err
+		}
+		if risk.Residual.Severity != risk.Inherent.Severity {
+			return 0, fmt.Errorf("%s changes severity from %d to %d; controls must not reduce consequence severity", risk.ID, risk.Inherent.Severity, risk.Residual.Severity)
+		}
+		if len(risk.PlanRefs) == 0 || len(risk.EvidenceRefs) == 0 || len(risk.AcceptanceCriteria) == 0 || len(risk.ReviewTriggers) == 0 {
+			return 0, fmt.Errorf("%s requires plan_refs, evidence_refs, acceptance_criteria and review_triggers", risk.ID)
+		}
+		if (risk.Status == "open" || risk.Status == "mitigating") && len(risk.NextActions) == 0 {
+			return 0, fmt.Errorf("%s is %s but has no next_actions", risk.ID, risk.Status)
+		}
+		if !dateRE.MatchString(risk.LastReviewed) {
+			return 0, fmt.Errorf("%s has invalid last_reviewed %q", risk.ID, risk.LastReviewed)
+		}
+		for _, ref := range risk.EvidenceRefs {
+			if strings.TrimSpace(ref) == "" {
+				return 0, fmt.Errorf("%s contains an empty evidence_ref", risk.ID)
+			}
+			if _, err := os.Stat(ref); err != nil {
+				return 0, fmt.Errorf("%s evidence_ref %q missing: %w", risk.ID, ref, err)
+			}
+		}
+		for _, ref := range risk.AuditRefs {
+			if _, ok := knownFindings[ref]; !ok {
+				return 0, fmt.Errorf("%s references unknown audit finding %q", risk.ID, ref)
+			}
+		}
+		if activeStatus[risk.Status] && !strings.Contains(plan, risk.ID) {
+			return 0, fmt.Errorf("active risk %s is not explicitly tracked in MASTER_PLAN.md", risk.ID)
+		}
+		if !fmeaIndexHasStatus(docs, risk.ID, risk.Status) {
+			return 0, fmt.Errorf("FMEA human index missing %s with status %s", risk.ID, risk.Status)
+		}
+		if (risk.Status == "accepted" || risk.Status == "closed") && (risk.Residual.RPN >= 150 || risk.Residual.Severity >= 9) && strings.TrimSpace(risk.DecisionRef) == "" {
+			return 0, fmt.Errorf("%s is high-severity %s risk without decision_ref", risk.ID, risk.Status)
+		}
+	}
+	return len(doc.Risks), nil
+}
+
+func verifyRiskScore(label string, score riskScore) error {
+	if score.Severity < 1 || score.Severity > 10 || score.Occurrence < 1 || score.Occurrence > 10 || score.Detection < 1 || score.Detection > 10 {
+		return fmt.Errorf("%s score dimensions must be within 1..10", label)
+	}
+	expected := score.Severity * score.Occurrence * score.Detection
+	if score.RPN != expected {
+		return fmt.Errorf("%s RPN is %d, expected %d", label, score.RPN, expected)
+	}
+	return nil
+}
+
+func fmeaIndexHasStatus(docs, id, status string) bool {
+	for _, line := range strings.Split(docs, "\n") {
+		if strings.Contains(line, "| "+id+" |") && strings.Contains(line, "| "+status+" |") {
+			return true
+		}
+	}
+	return false
 }
 
 func verifyReleaseEvidence() error {
