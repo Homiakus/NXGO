@@ -175,6 +175,7 @@ func createAgentLayout(t *testing.T, withDLLs bool) string {
 			if err := os.WriteFile(filepath.Join(bin, dll), []byte("fixture"), 0o644); err != nil {
 				t.Fatal(err)
 			}
+		}
 	}
 	return root
 }
