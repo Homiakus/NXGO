@@ -25,6 +25,8 @@ jobs:
         run: dotnet test agent/NXGO.Protocol.Tests/NXGO.Protocol.Tests.csproj -c Release --nologo
       - name: Agent Core contract suite
         run: dotnet test agent/NXGO.Agent.Core.Tests/NXGO.Agent.Core.Tests.csproj -c Release --nologo
+      - name: Architecture FMEA and invariant policy gate
+        run: go run ./cmd/invariantcheck
       - name: Canonical fast loop
         run: go run ./cmd/nxctl test fast
       - name: Fake-Agent chaos contract

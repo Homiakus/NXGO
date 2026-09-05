@@ -111,12 +111,13 @@ func TestResolveWorkerAgentPathsRejectsUnknownMode(t *testing.T) {
 }
 
 func TestCanonicalWorkerLaunchUsesManagedCoreRunnerAndDLL(t *testing.T) {
+	root := t.TempDir()
 	inst := &Installation{
-		Home:                `C:\Program Files\Siemens\DesigncenterNX2512`,
-		ManagedDir:          `C:\Program Files\Siemens\DesigncenterNX2512\NXBIN\managed_core`,
-		RunDotnetCoreNXOpen: `C:\Program Files\Siemens\DesigncenterNX2512\NXBIN\managed_core\run_dotnet_core_nxopen.exe`,
+		Home:                root,
+		ManagedDir:          filepath.Join(root, "NXBIN", "managed_core"),
+		RunDotnetCoreNXOpen: filepath.Join(root, "NXBIN", "managed_core", "run_dotnet_core_nxopen.exe"),
 	}
-	target := `D:\NXGO\agent\bin\NXGO.Agent.NXHost.dll`
+	target := filepath.Join(root, "agent", "bin", "NXGO.Agent.NXHost.dll")
 	command, args, err := resolveCanonicalWorkerLaunch(inst, target)
 	if err != nil {
 		t.Fatalf("resolve managed_core launch: %v", err)
@@ -127,17 +128,20 @@ func TestCanonicalWorkerLaunchUsesManagedCoreRunnerAndDLL(t *testing.T) {
 }
 
 func TestCanonicalWorkerLaunchRejectsLegacyManagedRunnerAndNonDLLTarget(t *testing.T) {
+	root := t.TempDir()
 	legacy := &Installation{
-		Home:                `C:\NX2512`,
-		ManagedDir:          `C:\NX2512\NXBIN\managed`,
-		RunDotnetCoreNXOpen: `C:\NX2512\NXBIN\managed_core\run_dotnet_core_nxopen.exe`,
+		Home:                root,
+		ManagedDir:          filepath.Join(root, "NXBIN", "managed"),
+		RunDotnetCoreNXOpen: filepath.Join(root, "NXBIN", "managed_core", "run_dotnet_core_nxopen.exe"),
 	}
-	if _, _, err := resolveCanonicalWorkerLaunch(legacy, `D:\agent\NXGO.Agent.NXHost.dll`); err == nil {
+	dllTarget := filepath.Join(root, "agent", "NXGO.Agent.NXHost.dll")
+	if _, _, err := resolveCanonicalWorkerLaunch(legacy, dllTarget); err == nil {
 		t.Fatal("canonical launch selected legacy managed directory")
 	}
 	core := *legacy
-	core.ManagedDir = `C:\NX2512\NXBIN\managed_core`
-	if _, _, err := resolveCanonicalWorkerLaunch(&core, `D:\agent\NXGO.Agent.NXHost.exe`); err == nil {
+	core.ManagedDir = filepath.Join(root, "NXBIN", "managed_core")
+	exeTarget := filepath.Join(root, "agent", "NXGO.Agent.NXHost.exe")
+	if _, _, err := resolveCanonicalWorkerLaunch(&core, exeTarget); err == nil {
 		t.Fatal("canonical launch accepted an .exe target; runner requires the matching .dll")
 	}
 }

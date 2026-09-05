@@ -2,7 +2,7 @@
 
 Status: **Living implementation plan**  
 Created: 2026-08-29  
-Last major audit update: 2026-09-02
+Last major audit update: 2026-09-05
 
 ## Current phase
 `D6`
@@ -60,6 +60,96 @@ A feature is production-ready only when all required dimensions reach the releas
 - `E5` — soak/chaos/performance/security evidence at release scale.
 
 **Rule:** documentation must never claim a higher evidence class than the repository can reproduce or point to through retained CI/test artifacts.
+
+---
+
+# 1A. Architecture FMEA and explicit risk tracking
+
+Architecture risk is a first-class planning dimension. The normative human FMEA is `docs/ARCHITECTURE_FMEA.md`; the machine source of truth is `policy/architecture-risks.json`. `cmd/invariantcheck` verifies scoring math, evidence paths, FMEA/document status synchronization and that every active risk remains explicitly present in this plan.
+
+## Planning rules
+
+- Every architecture-affecting task/PR identifies the applicable `RISK-ARCH-*` IDs.
+- A score/status may improve only when implementation **and evidence** justify a lower Occurrence/Detection value.
+- Residual RPN `>= 150` is an active architecture workstream; it cannot disappear from planning because a code change landed.
+- High-severity `watch` risks remain visible because NX release, transport, lifecycle or workflow changes can reactivate them.
+- A new architectural failure mode must be added to the FMEA and this plan in the same change.
+- `accepted`/`closed` high-severity risks require an explicit decision record and retained evidence.
+
+## Active architecture risk index
+
+| Risk ID | Residual RPN | Status | Current planning owner / workstream |
+|---|---:|---|---|
+| RISK-ARCH-001 | 60 | watch | H1/H2/D6 — RPC outcome, replay and quarantine |
+| RISK-ARCH-002 | 40 | watch | H3/D1-D3 — ObjectRef lifetime and fail-closed targeting |
+| RISK-ARCH-003 | 90 | watch | H4/D6 — NX-safe executor and reentrancy boundary |
+| RISK-ARCH-004 | 160 | mitigating | H5.2/H5.3 — per-operation UpdateManager/rollback/postcondition recipe |
+| RISK-ARCH-005 | 108 | watch | H6.1/release qualification — NX runtime/load-context compatibility |
+| RISK-ARCH-006 | 60 | watch | H5.1/D2-D4 — unit and semantic correctness |
+| RISK-ARCH-007 | 160 | mitigating | API scanner — generated raw API/capability compatibility proof |
+| RISK-ARCH-008 | 28 | watch | H3/H6.3/D6 — bounded handles/journal/queues and soak |
+| RISK-ARCH-009 | 108 | mitigating | H6.2/D6 — local IPC authentication plus explicit Windows DACL |
+| RISK-ARCH-010 | 81 | mitigating | H5.4/D4 — durable save/export and staged publication |
+| RISK-ARCH-011 | 54 | watch | evidence policy/H4/H6.1 — simulated vs production proof parity |
+| RISK-ARCH-012 | 48 | watch | H5.2/domain phases — public API parameter honesty/boundaries |
+| RISK-ARCH-013 | 96 | mitigating | H6.4/D2/D3/D6 — bulk IPC, queue wait and timeout resilience |
+| RISK-ARCH-014 | 120 | mitigating | H6.3/D4/future domains — modal UI/journal/headless behavior |
+| RISK-ARCH-015 | 216 | open | workflow plane/H5.4/future PLM — distributed side-effect recovery |
+| RISK-ARCH-016 | 108 | mitigating | H5/H6.1/D3 — capability/license/partial-load state |
+
+## Current risk-driven execution priorities
+
+### RF-001 — distributed side-effect safety — RISK-ARCH-015 — **P0 before external writes**
+
+- [ ] define a durable workflow-step identity and recovery state model for NX + Designcenter/Teamcenter/external publication;
+- [ ] define ordering of NX commit, artifact staging and external publication;
+- [ ] require idempotency key or compensation for every external side effect;
+- [ ] inject crashes between every external side-effect transition;
+- [ ] prove recovery distinguishes `NX committed / external pending`, `external committed / response lost`, and `compensation failed`;
+- [ ] block external-system write support until the residual risk is below the high band or explicitly accepted by ADR.
+
+### RF-002 — mutation/update completeness — RISK-ARCH-004 — **P0**
+
+- [ ] complete explicit UpdateManager/update semantics for every builder-backed mutation recipe;
+- [ ] add rollback-failure and semantic-postcondition-failure health classification tests;
+- [ ] require every new mutating domain operation to declare update, rollback, quarantine and semantic oracle policy;
+- [ ] lower residual Occurrence/Detection only after retained real-NX fault evidence.
+
+### RF-003 — raw generation compatibility — RISK-ARCH-007 — **P1**
+
+- [ ] complete deterministic `2512 -> 2606` scanner/binding compatibility report;
+- [ ] validate a representative subset against Siemens/NX tooling where available;
+- [ ] make capability advertisement require generated binding + generated dispatch + release evidence;
+- [ ] add generator drift tests that fail if Go binding, C# dispatch and manifest signature IDs diverge.
+
+### RF-004 — IPC OS boundary hardening — RISK-ARCH-009 — **P1**
+
+- [ ] implement reproducible per-user/service Windows named-pipe DACL when a supported runtime/package/API path is available;
+- [ ] retain unauthorized-client, impersonation and flooding evidence on supported Windows runners;
+- [ ] re-score only after peer/ACL enforcement is demonstrated on the production path.
+
+### RF-005 — artifact durability — RISK-ARCH-010 — **P1**
+
+- [ ] stage externally published artifacts before atomic publication where destination semantics allow it;
+- [ ] define durability and identity validation per export type;
+- [ ] add crash/failure fixtures around staging, replacement and final acknowledgement.
+
+### RF-006 — headless and state capability robustness — RISK-ARCH-013 / RISK-ARCH-014 / RISK-ARCH-016 — **P1**
+
+- [ ] define batch/page limits and queue-wait telemetry for large-assembly/raw operations;
+- [ ] classify dialog-prone/journal-only APIs before exposing them publicly;
+- [ ] add partial-load/license-loss fixtures to every dependent domain;
+- [ ] keep timeouts from becoming a substitute for bounded workload design.
+
+## Risk gate for feature completion
+
+A task is not complete when its implementation is green but its architecture-risk impact is unknown. The Definition of Done therefore requires:
+
+1. applicable `RISK-ARCH-*` IDs reviewed;
+2. any S/O/D/status change justified by evidence;
+3. new risks entered in `policy/architecture-risks.json`, `docs/ARCHITECTURE_FMEA.md` and this plan;
+4. high/open/mitigating residual risks linked to explicit work and acceptance criteria;
+5. `go run ./cmd/invariantcheck` green.
 
 ---
 
@@ -1386,6 +1476,8 @@ Only after H6 and stable initial domain release:
 - enterprise policy/authorization;
 - declarative drawing/package automation at organization scale.
 
+External-system write work is additionally blocked by `RISK-ARCH-015` until its saga/idempotency/compensation gate is satisfied.
+
 ---
 
 # 16. Release engineering
@@ -1404,6 +1496,7 @@ All required:
 - [ ] stable initial public Go API;
 - [ ] production Agent uses canonical tested Core;
 - [ ] no known P0 correctness defect;
+- [ ] no unaccepted `open`/`mitigating` architecture risk with residual RPN `>= 150` blocks the intended release scope;
 - [ ] safe mutation outcome/idempotency contract;
 - [ ] fail-closed generation-aware object identity;
 - [ ] semantic fixtures pass on supported NX releases;
@@ -1424,6 +1517,8 @@ All required:
 The remediation sequence is intentionally strict:
 
 ```text
+continuous architecture FMEA / risk gate
+    ↓
 H0 evidence baseline
     ↓
 H1 protocol + cancellation
@@ -1449,7 +1544,7 @@ advanced domains
 v1
 ```
 
-Some implementation work may overlap, but **exit gates may not be skipped**.
+Some implementation work may overlap, but **exit gates may not be skipped**. FMEA review is continuous rather than a one-time phase.
 
 ---
 
@@ -1471,6 +1566,8 @@ The first coding batch after this plan update should be limited to the highest-r
 12. begin migration of real AgentWorker onto canonical Agent Core.
 
 Do not bundle broad new NX feature coverage into this batch.
+
+For the current post-hardening state, the next unresolved architecture-risk work is RF-001..RF-006 in section 1A; those workstreams supersede stale historical ordering when implementation status has already advanced.
 
 ---
 
@@ -1495,7 +1592,9 @@ An iteration is complete only when:
 15. non-NX CI remains deterministic and green;
 16. the change distinguishes simulated evidence from real-NX evidence;
 17. architectural findings update this plan/ADR/invariant catalog;
-18. the change satisfies `docs/DEFINITION_OF_DONE.md`.
+18. the change satisfies `docs/DEFINITION_OF_DONE.md`;
+19. applicable `RISK-ARCH-*` entries were reviewed and referenced;
+20. any risk score/status change is synchronized across `policy/architecture-risks.json`, `docs/ARCHITECTURE_FMEA.md` and this plan with evidence.
 
 ---
 

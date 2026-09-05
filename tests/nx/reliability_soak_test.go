@@ -1,3 +1,5 @@
+//go:build windows
+
 package nx_test
 
 import (
@@ -124,20 +126,20 @@ func computeStats(durations []time.Duration) LatencyStats {
 }
 
 type ReliabilityReport struct {
-	Release           string                  `json:"release"`
-	PID               int                     `json:"pid"`
-	CyclesCompleted   int                     `json:"cycles_completed"`
-	InitialMemoryMB   float64                 `json:"initial_memory_mb"`
-	PeakMemoryMB      float64                 `json:"peak_memory_mb"`
-	FinalMemoryMB     float64                 `json:"final_memory_mb"`
-	MemoryGrowthMB    float64                 `json:"memory_growth_mb"`
-	InitialHandles    uint32                  `json:"initial_handles"`
-	PeakHandles       uint32                  `json:"peak_handles"`
-	FinalHandles      uint32                  `json:"final_handles"`
-	PingStats         LatencyStats            `json:"ping_stats"`
-	CycleDurationStats LatencyStats           `json:"cycle_duration_stats"`
-	CrashRecoveryMs   float64                 `json:"crash_recovery_ms"`
-	Status            string                  `json:"status"`
+	Release            string       `json:"release"`
+	PID                int          `json:"pid"`
+	CyclesCompleted    int          `json:"cycles_completed"`
+	InitialMemoryMB    float64      `json:"initial_memory_mb"`
+	PeakMemoryMB       float64      `json:"peak_memory_mb"`
+	FinalMemoryMB      float64      `json:"final_memory_mb"`
+	MemoryGrowthMB     float64      `json:"memory_growth_mb"`
+	InitialHandles     uint32       `json:"initial_handles"`
+	PeakHandles        uint32       `json:"peak_handles"`
+	FinalHandles       uint32       `json:"final_handles"`
+	PingStats          LatencyStats `json:"ping_stats"`
+	CycleDurationStats LatencyStats `json:"cycle_duration_stats"`
+	CrashRecoveryMs    float64      `json:"crash_recovery_ms"`
+	Status             string       `json:"status"`
 }
 
 func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
@@ -164,7 +166,6 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 	t.Logf("initial worker metrics: working_set=%.2f MB, handles=%d",
 		float64(initMetrics.WorkingSetBytes)/(1024*1024), initMetrics.HandleCount)
 
-	// Baseline session info
 	baseInfo, err := session.Info(ctx)
 	if err != nil {
 		t.Fatalf("session.Info baseline failed: %v", err)
@@ -189,7 +190,6 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 			t.Fatalf("cycle %d NewPart failed: %v", i, err)
 		}
 
-		// Modeling: block + cylinder
 		_, err = part.CreateBlock(ctx, nxgo.BlockParams{
 			Origin: nxgo.Point3D{0, 0, 0},
 			Length: 100,
@@ -218,7 +218,6 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 			t.Fatalf("cycle %d expected positive volume, got %.2f", i, massProps.Volume)
 		}
 
-		// Drafting: sheet + PDF export
 		_, err = part.CreateDrawingSheet(ctx, nxgo.CreateSheetParams{
 			SheetName:        fmt.Sprintf("SHEET_%d", i),
 			Units:            "mm",
@@ -250,12 +249,10 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 			t.Fatalf("cycle %d expected positive PDF size, got %d", i, pdfRes.FileSizeBytes)
 		}
 
-		// SaveAs
 		if _, err := part.SaveAs(ctx, savedPath); err != nil {
 			t.Fatalf("cycle %d SaveAs failed: %v", i, err)
 		}
 
-		// Close
 		if err := part.ForceCloseDiscard(ctx); err != nil {
 			t.Fatalf("cycle %d ForceCloseDiscard failed: %v", i, err)
 		}
@@ -263,7 +260,6 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 		dur := time.Since(start)
 		cycleDurations = append(cycleDurations, dur)
 
-		// Sample metrics
 		m, _ := queryProcessMetrics(pid)
 		if m.WorkingSetBytes > peakMem {
 			peakMem = m.WorkingSetBytes
@@ -275,7 +271,6 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 			i, dur.Round(time.Millisecond), float64(m.WorkingSetBytes)/(1024*1024), m.HandleCount)
 	}
 
-	// Verify session health after cycles
 	endInfo, err := session.Info(ctx)
 	if err != nil {
 		t.Fatalf("session.Info end query failed: %v", err)
@@ -284,7 +279,6 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 		t.Fatalf("worker thread changed: baseline=%d, end=%d", baseInfo.ThreadID, endInfo.ThreadID)
 	}
 
-	// Ping RPC latency benchmark
 	t.Log("running 25-iteration ping latency probe...")
 	var pingDurations []time.Duration
 	for i := 0; i < 25; i++ {
@@ -299,19 +293,16 @@ func TestRealNXWarmWorkerReliabilityAndPerformance(t *testing.T) {
 	pingStats := computeStats(pingDurations)
 	cycleStats := computeStats(cycleDurations)
 
-	// Crash-recovery test
 	t.Log("initiating crash-recovery campaign: terminating worker process forcefully...")
 	crashStart := time.Now()
 	_ = worker.Kill()
 
-	// Verify subsequent RPC on terminated session fails gracefully
 	err = session.Ping(ctx)
 	if err == nil {
 		t.Fatal("expected error calling ping on terminated worker, but call succeeded")
 	}
 	t.Logf("terminated worker failed gracefully as expected: %v", err)
 
-	// Start fresh worker to verify clean recovery and reuse of pipe resources
 	recoveredWorker, recoveredSession := startTestWorker(t, ctx)
 	defer recoveredWorker.Kill()
 
@@ -363,7 +354,6 @@ func TestRealNXReliabilityAssemblyAndForcedTermination(t *testing.T) {
 
 	tempDir := t.TempDir()
 
-	// 1. Repeated assembly component creation and tree enumeration
 	t.Log("running assembly component creation and tree enumeration...")
 	pinPath := filepath.Join(tempDir, "rel_pin.prt")
 	pinPart, err := session.NewPart(ctx, pinPath, "mm")
@@ -384,14 +374,12 @@ func TestRealNXReliabilityAssemblyAndForcedTermination(t *testing.T) {
 	}
 	_ = pinPart.ForceCloseDiscard(ctx)
 
-	// Create root assembly
 	assyPath := filepath.Join(tempDir, "rel_assembly.prt")
 	assy, err := session.NewPart(ctx, assyPath, "mm")
 	if err != nil {
 		t.Fatalf("NewPart assy failed: %v", err)
 	}
 
-	// Repeatedly add components and verify tree enumeration
 	for compIdx := 1; compIdx <= 3; compIdx++ {
 		compName := fmt.Sprintf("PIN_COMP_%d", compIdx)
 		comp, err := assy.AddComponent(ctx, nxgo.AddComponentParams{
@@ -418,7 +406,6 @@ func TestRealNXReliabilityAssemblyAndForcedTermination(t *testing.T) {
 	}
 	_ = assy.ForceCloseDiscard(ctx)
 
-	// 2. Forced NX termination at mutation phase
 	t.Log("testing forced NX termination during active mutation phase...")
 	mutPartPath := filepath.Join(tempDir, "mutation_kill.prt")
 	mutPart, err := session.NewPart(ctx, mutPartPath, "mm")
@@ -426,13 +413,11 @@ func TestRealNXReliabilityAssemblyAndForcedTermination(t *testing.T) {
 		t.Fatalf("NewPart for mutation kill failed: %v", err)
 	}
 
-	// Trigger async kill shortly after launching a mutation
 	killTimer := time.AfterFunc(15*time.Millisecond, func() {
 		_ = worker.Kill()
 	})
 	defer killTimer.Stop()
 
-	// This mutation should be cut off by worker kill and fail fast
 	_, mutErr := mutPart.CreateBlock(ctx, nxgo.BlockParams{
 		Origin: nxgo.Point3D{0, 0, 0},
 		Length: 500,
@@ -449,7 +434,6 @@ func TestRealNXReliabilityAssemblyAndForcedTermination(t *testing.T) {
 	}
 	t.Logf("forced mutation termination handled cleanly: %v", mutErr)
 
-	// 3. Verify clean recreation of worker after abrupt mutation termination
 	t.Log("verifying fresh worker starts cleanly after mutation phase crash...")
 	freshWorker, freshSession := startTestWorker(t, ctx)
 	defer freshWorker.Kill()
@@ -460,4 +444,3 @@ func TestRealNXReliabilityAssemblyAndForcedTermination(t *testing.T) {
 	}
 	t.Logf("fresh worker operational: release=%s thread=%d", freshInfo.Release, freshInfo.ThreadID)
 }
-
